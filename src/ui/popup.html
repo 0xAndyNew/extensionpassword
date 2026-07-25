@@ -1,0 +1,177 @@
+<!doctype html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aegis Vault</title><link rel="stylesheet" href="index.css"><style>
+:root {
+  --bg: #f5f5f7;
+  --panel: #ffffff;
+  --sidebar-bg: #f6f6f6;
+  --line: rgba(0, 0, 0, 0.06);
+  --text: #1d1d1f;
+  --muted: #86868b;
+  --accent: #0071e3;
+  --accent-light: rgba(0, 113, 227, 0.08);
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+body { width: 380px; min-height: 540px; background: var(--bg); color: var(--text); font-family: var(--font-family); display: flex; flex-direction: column; overflow: hidden; margin: 0; -webkit-font-smoothing: antialiased; }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.header-left { display: flex; align-items: center; gap: 8px; }
+.logo-img { width: 26px; height: 26px; object-fit: contain; }
+.header-title-box { display: flex; flex-direction: column; }
+.header-title-box h1 { margin: 0; font-size: 13.5px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.header-title-box p { margin: 1px 0 0; font-size: 10px; color: var(--muted); }
+.header-actions { display: flex; gap: 6px; align-items: center; }
+.header-actions button { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; padding: 6px; border-radius: 6px; display: grid; place-items: center; transition: 0.15s; }
+.header-actions button:hover { background: rgba(0, 0, 0, 0.05); color: var(--text); }
+.search-bar { display: flex; align-items: center; background: #e8e8ed; border-radius: 8px; padding: 8px 12px; margin: 8px 12px; gap: 8px; border: 1px solid transparent; transition: background 0.15s, border-color 0.15s, box-shadow 0.15s; }
+.search-bar:focus-within { background: #ffffff; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1); }
+.search-bar input { background: transparent; border: 0; width: 100%; color: var(--text); font-size: 13px; outline: none; font-family: var(--font-family); }
+.main-tabs { display: flex; border-bottom: 1px solid var(--line); background: var(--panel); }
+.main-tab { flex: 1; text-align: center; padding: 12px 0; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; justify-content: center; align-items: center; gap: 6px; transition: color 0.15s; }
+.main-tab:hover { color: var(--text); }
+.main-tab.active { color: var(--accent); border-color: var(--accent); }
+.sub-tabs-popup { display: flex; gap: 8px; padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.sub-tab-popup { font-size: 11.5px; font-weight: 600; color: var(--muted); cursor: pointer; padding: 4px 10px; border-radius: 6px; transition: 0.15s; }
+.sub-tab-popup:hover { color: var(--text); }
+.sub-tab-popup.active { background: var(--accent-light); color: var(--accent); }
+.scroll-area { flex: 1; overflow-y: auto; max-height: 320px; }
+.list-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background 0.15s; background: var(--panel); }
+.list-item:hover { background: #f5f5f7; }
+.list-icon { width: 32px; height: 32px; border-radius: 7px; background: rgba(52, 199, 89, 0.1); display: grid; place-items: center; font-size: 14px; font-weight: bold; color: #34c759; overflow: hidden; }
+.list-icon img { width: 100%; height: 100%; object-fit: cover; }
+.list-info { flex: 1; min-width: 0; }
+.list-info h4 { margin: 0 0 2px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.list-info p { margin: 0; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-menu-btn { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; display: none; padding: 4px; border-radius: 4px; }
+.list-item:hover .list-menu-btn { display: block; }
+.list-menu-btn:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+.identity-info { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.identity-group { background: var(--panel); border-radius: 12px; padding: 14px; border: 1px solid var(--line); box-shadow: 0 1px 3px rgba(0,0,0,0.01); }
+.identity-group h4 { margin: 0 0 10px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); font-weight: 700; }
+.identity-field { display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.03); }
+.identity-field:last-child { border-bottom: 0; }
+.identity-field span:first-child { color: var(--muted); }
+.identity-field span:last-child { color: var(--text); font-weight: 500; }
+.floating-actions { position: absolute; bottom: 16px; right: 16px; display: flex; flex-direction: column; gap: 10px; z-index: 10; }
+.float-btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: white; cursor: pointer; border: 0; font-size: 18px; transition: transform 0.15s; }
+.float-btn:hover { transform: scale(1.05); }
+.float-btn.save { background: #34c759; box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3); }
+.float-btn.add { background: var(--accent); box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3); }
+.footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--line); font-size: 10.5px; color: var(--muted); }
+.footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
+
+/* Custom auth panels */
+.auth-panel { margin: 20px; padding: 20px; background: var(--panel); border-radius: 16px; border: 1px solid var(--line); box-shadow: 0 4px 20px rgba(0,0,0,0.03); }
+.auth-panel label { display: block; font-size: 11.5px; font-weight: 600; margin-bottom: 6px; color: var(--muted); }
+.auth-panel input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: #f5f5f7; color: var(--text); margin-bottom: 12px; outline: none; font-size: 13px; font-family: var(--font-family); transition: border-color 0.15s, background 0.15s; }
+.auth-panel input:focus { border-color: var(--accent); background: #ffffff; box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1); }
+.auth-panel button { width: 100%; padding: 11px; border-radius: 8px; background: var(--accent); color: white; font-weight: 700; border: 0; cursor: pointer; font-size: 13px; transition: background 0.15s; }
+.auth-panel button:hover { background: #0077ed; }
+.error { color: #ff3b30; font-size: 11.5px; margin-top: 8px; font-weight: 500; text-align: center; }
+</style></head><body>
+<header class="header">
+  <div class="header-left"><img src="logo.svg" alt="logo" class="logo-img"><div class="header-title-box"><h1>Aegis Vault</h1><p>Bảo vệ ngay trên thiết bị</p></div></div>
+  <div class="header-actions">
+    <button id="optionsButton" class="hidden" title="Quản lý nâng cao" aria-label="Mở cài đặt">⚙️</button>
+    <button id="lockButton" title="Khóa vault">🔒</button>
+  </div>
+</header>
+
+<div class="search-bar">
+  <span>⌕</span>
+  <input type="search" id="searchInput" placeholder="Search Aegis Vault">
+</div>
+
+<nav class="main-tabs">
+  <div class="main-tab active" id="tabLogins">🔑 Logins</div>
+  <div class="main-tab" id="tabGenerator">🎲 Tạo mật khẩu</div>
+  <div class="main-tab" id="tabProfile" style="text-transform: uppercase;">👤 HI</div>
+</nav>
+
+<!-- Auth View (Lock screen) -->
+<section id="authView" class="auth-panel">
+  <span class="eyebrow" style="font-size:9.5px;color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:700">ZERO-KNOWLEDGE VAULT</span>
+  <h2 id="authTitle" style="font-size:17px;margin:10px 0 4px;font-weight:700;letter-spacing:-0.01em">Mở khóa kho bảo mật</h2>
+  <p id="authHint" style="font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.4">Nhập mật khẩu chính để tiếp tục.</p>
+  <label for="masterPassword">Mật khẩu chính</label>
+  <input id="masterPassword" type="password">
+  <button id="authButton" class="primary">Mở khóa →</button>
+  <p id="error" class="error"></p>
+  <a id="authSignOutBtn" href="#" style="display:block; text-align:center; margin-top:14px; font-size:12px; color:var(--accent); text-decoration:none; font-weight:500;">Đăng nhập tài khoản Google khác</a>
+</section>
+
+<!-- Google Auth screen -->
+<section id="googleView" class="auth-panel hidden">
+  <span class="eyebrow" style="font-size:9.5px;color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:700">GOOGLE IDENTITY</span>
+  <h2 style="font-size:17px;margin:10px 0 4px;font-weight:700;letter-spacing:-0.01em">Đăng nhập để quản lý</h2>
+  <p style="font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.4">Google chỉ xác minh danh tính. Dữ liệu vẫn được mã hóa hoàn toàn cục bộ.</p>
+  <button id="googleButton" class="primary">Tiếp tục với Google →</button>
+  <p id="googleError" class="error"></p>
+</section>
+
+<!-- Vault list view -->
+<section id="vaultView" class="hidden" style="flex:1;display:flex;flex-direction:column;position:relative;">
+  <div class="sub-tabs-popup" id="subTabs">
+    <div class="sub-tab-popup active" data-tab="popular">Popular</div>
+    <div class="sub-tab-popup" data-tab="recent">Recent</div>
+    <div class="sub-tab-popup" data-tab="az">A-Z</div>
+  </div>
+  
+  <div class="scroll-area" id="credentialList"></div>
+  
+  <div class="scroll-area hidden" id="generatorTabContent" style="padding: 16px;">
+    <div class="identity-group" style="display:flex; flex-direction:column; gap:10px; border:1px solid var(--line);">
+      <h4 style="margin:0 0 4px; font-size:11px; color:var(--accent);">PASSWORD GENERATOR</h4>
+      <div style="display:flex; gap:6px; align-items:center; margin-bottom: 8px;">
+        <input id="genPasswordDisplay" type="text" readonly style="flex:1; min-width:0; padding:10px; border-radius:8px; border:1px solid var(--line); background:#f5f5f7; font-family:monospace; font-size:14px; text-align:center; font-weight:600; color:var(--text); outline:none;">
+        <button id="genRegenBtn" title="Tạo mật khẩu mới" style="width:36px; height:36px; display:grid; place-items:center; border-radius:8px; background:var(--accent-light); color:var(--accent); border:0; cursor:pointer; font-size:16px; font-weight:bold; transition:0.1s;">↻</button>
+        <button id="genCopyBtn" style="width:auto; padding:0 14px; height:36px; border-radius:8px; background:#34c759; color:white; border:0; cursor:pointer; font-size:13px; font-weight:bold; transition:0.1s;">Copy</button>
+      </div>
+      
+      <div class="identity-field" style="border-bottom:0; padding:2px 0; font-size:12px;">
+        <span>Độ dài: <strong id="lenLabel">16</strong> ký tự</span>
+      </div>
+      <input id="genLength" type="range" min="8" max="32" value="16" style="width:100%; cursor:pointer; margin-bottom:8px;">
+      
+      <div class="identity-field" style="font-size:12px;">
+        <span>Chữ hoa (A-Z)</span>
+        <input id="genUpper" type="checkbox" checked style="width:auto; cursor:pointer;">
+      </div>
+      <div class="identity-field" style="font-size:12px;">
+        <span>Chữ thường (a-z)</span>
+        <input id="genLower" type="checkbox" checked style="width:auto; cursor:pointer;">
+      </div>
+      <div class="identity-field" style="font-size:12px;">
+        <span>Chữ số (0-9)</span>
+        <input id="genNumbers" type="checkbox" checked style="width:auto; cursor:pointer;">
+      </div>
+      <div class="identity-field" style="border-bottom:0; font-size:12px;">
+        <span>Ký tự đặc biệt (!@#...)</span>
+        <input id="genSymbols" type="checkbox" checked style="width:auto; cursor:pointer;">
+      </div>
+    </div>
+  </div>
+  
+  <!-- Identity/Profile Details Tab -->
+  <div class="scroll-area hidden" id="identityTabContent">
+    <div class="identity-info">
+      <div class="identity-group">
+        <h4>Google Profile</h4>
+        <div class="identity-field"><span>First Name</span><span id="pFirstName">—</span></div>
+        <div class="identity-field"><span>Email</span><span id="pEmail">—</span></div>
+      </div>
+      
+      <div class="identity-group" style="margin-top:10px; border:0; padding:0; background:transparent; box-shadow:none;">
+        <button id="profileSignOutBtn" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(244, 63, 94, 0.2); color:#e11d48; background:rgba(244, 63, 94, 0.05); cursor:pointer; font-weight:600; font-size:12.5px; transition:0.15s;">Đăng xuất Google</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="floating-actions">
+    <button class="float-btn add" id="floatAddBtn" title="Thêm mới tài khoản">＋</button>
+  </div>
+</section>
+
+<footer class="footer">
+  <div style="margin: 0 auto;">Mã hóa AES-256-GCM cục bộ</div>
+</footer>
+
+<script type="module" src="popup.js"></script>
+</body></html>

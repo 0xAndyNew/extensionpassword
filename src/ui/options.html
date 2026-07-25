@@ -1,0 +1,440 @@
+<!doctype html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aegis Vault Dashboard</title><link rel="stylesheet" href="index.css"><style>
+:root {
+  --apple-bg: #f5f5f7;
+  --apple-panel: #ffffff;
+  --apple-sidebar: rgba(246, 246, 246, 0.82);
+  --apple-line: rgba(0, 0, 0, 0.08);
+  --apple-text: #1d1d1f;
+  --apple-muted: #86868b;
+  --apple-accent: #0071e3;
+  --apple-accent-light: rgba(0, 113, 227, 0.08);
+  --apple-green: #34c759;
+  --apple-green-bg: rgba(52, 199, 89, 0.1);
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif;
+  --shadow-soft: 0 1px 3px rgba(0,0,0,0.02), 0 4px 12px rgba(0,0,0,0.01);
+  --shadow-active: 0 12px 30px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.02);
+}
+body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-bg); color: var(--apple-text); font-family: var(--font-family); margin: 0; -webkit-font-smoothing: antialiased; }
+.sidebar { width: 250px; background: var(--apple-sidebar); border-right: 1px solid var(--apple-line); padding: 24px 16px; display: flex; flex-direction: column; }
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; padding-left: 6px; }
+.logo-img { width: 34px; height: 34px; object-fit: contain; }
+.brand h1 { font-size: 17px; margin: 0; font-weight: 700; color: var(--apple-text); letter-spacing: -0.01em; }
+.nav-menu { display: flex; flex-direction: column; gap: 4px; list-style: none; padding: 0; margin: 0; }
+.nav-item { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; color: var(--apple-text); cursor: pointer; font-weight: 500; font-size: 13.5px; transition: 0.12s; }
+.nav-item:hover { background: rgba(0, 0, 0, 0.04); }
+.nav-item.active { background: var(--apple-accent-light); color: var(--apple-accent); font-weight: 600; }
+.sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 12px; }
+.promo-box { border: 1px solid var(--apple-line); border-radius: 12px; padding: 12px; background: var(--apple-panel); font-size: 11.5px; line-height: 1.45; color: var(--apple-muted); box-shadow: var(--shadow-soft); }
+.promo-box strong { color: var(--apple-text); display: block; margin-bottom: 4px; }
+.sidebar-footer { font-size: 10px; color: var(--apple-muted); text-align: center; }
+
+.main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #ffffff; }
+.top-bar { display: flex; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--apple-line); background: var(--apple-panel); gap: 20px; }
+.top-search-wrapper { position: relative; width: 340px; margin: 0 auto; }
+.top-search-wrapper input { width: 100%; padding: 8px 12px 8px 36px; border: 1px solid var(--apple-line); border-radius: 8px; background: #f5f5f7; outline: none; font-size: 13px; font-family: var(--font-family); transition: 0.15s; }
+.top-search-wrapper input:focus { border-color: var(--apple-accent); background: #ffffff; box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15); }
+.top-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--apple-muted); font-size: 14px; }
+.top-right { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+.top-help { cursor: pointer; color: var(--apple-muted); font-size: 16px; transition: color 0.15s; }
+.top-help:hover { color: var(--apple-text); }
+.top-user { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--apple-text); cursor: pointer; font-weight: 500; position: relative; }
+.top-avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--apple-accent-light); color: var(--apple-accent); display: grid; place-items: center; overflow: hidden; font-weight: bold; font-size: 11px; }
+.top-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* User Dropdown Menu */
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--apple-panel);
+  border: 1px solid var(--apple-line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-active);
+  z-index: 1000;
+  min-width: 180px;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+}
+.user-dropdown.hidden {
+  display: none;
+}
+.dropdown-item {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--apple-text);
+  cursor: pointer;
+  transition: background 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  width: 100%;
+}
+.dropdown-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+.dropdown-item.danger {
+  color: #e11d48;
+}
+.dropdown-item.danger:hover {
+  background: rgba(244, 63, 94, 0.08);
+}
+.dropdown-divider {
+  border-top: 1px solid var(--apple-line);
+  margin: 4px 0;
+}
+
+.sub-tabs-bar { display: flex; padding: 0 24px; border-bottom: 1px solid var(--apple-line); background: var(--apple-panel); }
+.sub-tab { padding: 14px 20px; font-size: 13px; font-weight: 600; color: var(--apple-muted); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s; }
+.sub-tab:hover { color: var(--apple-text); }
+.sub-tab.active { color: var(--apple-accent); border-color: var(--apple-accent); }
+
+.grid-container { flex: 1; overflow-y: auto; padding: 24px; background: var(--apple-bg); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+.grid-card { border: 1px solid var(--apple-line); border-radius: 14px; padding: 20px 14px; text-align: center; background: var(--apple-panel); cursor: pointer; transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s, border-color 0.2s; position: relative; display: flex; flex-direction: column; align-items: center; box-shadow: var(--shadow-soft); }
+.grid-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-active); border-color: rgba(0,0,0,0.15); }
+.card-shield { width: 44px; height: 44px; border-radius: 11px; margin-bottom: 12px; background: var(--apple-green-bg); color: var(--apple-green); display: grid; place-items: center; overflow: hidden; }
+.card-shield img { width: 100%; height: 100%; object-fit: cover; }
+.card-title { font-weight: 600; font-size: 13.5px; margin: 0 0 3px; color: var(--apple-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; letter-spacing: -0.01em; }
+.card-user { font-size: 11.5px; color: var(--apple-muted); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+.card-hover-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.02); border-radius: 14px; opacity: 0; display: grid; place-items: center; transition: opacity 0.15s; color: var(--apple-muted); font-size: 11px; font-weight: 600; backdrop-filter: blur(1px); }
+.grid-card:hover .card-hover-overlay { opacity: 1; }
+
+.drawer { position: fixed; top: 0; right: -380px; width: 380px; height: 100%; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(25px) saturate(190%); border-left: 1px solid var(--apple-line); box-shadow: -8px 0 30px rgba(0,0,0,0.05); transition: right 0.28s cubic-bezier(0.16, 1, 0.3, 1); z-index: 100; display: flex; flex-direction: column; }
+.drawer.open { right: 0; }
+.drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--apple-line); }
+.drawer-header-left { display: flex; align-items: center; gap: 10px; }
+.drawer-header-left h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--apple-text); }
+.drawer-header-left .logo-badge { width: 28px; height: 28px; border-radius: 7px; background: var(--apple-green-bg); color: var(--apple-green); display: grid; place-items: center; font-size: 14px; overflow: hidden; }
+.drawer-header-left .logo-badge img { width: 100%; height: 100%; object-fit: cover; }
+.drawer-actions { display: flex; gap: 8px; }
+.drawer-actions button { padding: 6px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; border: 1px solid var(--apple-line); background: #ffffff; color: var(--apple-text); transition: 0.1s; }
+.drawer-actions button:hover { background: #f5f5f7; }
+.drawer-actions button.save { background: var(--apple-accent); color: white; border-color: var(--apple-accent); }
+.drawer-actions button.save:hover { background: #0077ed; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.form-section-title { font-size: 11px; font-weight: 700; color: var(--apple-accent); text-transform: uppercase; margin: 8px 0 4px; letter-spacing: 0.05em; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group label { font-size: 12px; font-weight: 600; color: var(--apple-muted); }
+.form-group input, .form-group textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--apple-line); border-radius: 8px; background: rgba(255, 255, 255, 0.6); color: inherit; outline: none; font-size: 13px; font-family: var(--font-family); transition: border-color 0.15s, box-shadow 0.15s; }
+.form-group input:focus, .form-group textarea:focus { border-color: var(--apple-accent); background: #ffffff; box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1); }
+.input-with-btn { position: relative; }
+.input-with-btn input { padding-right: 56px; }
+.input-with-btn button { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: transparent; border: 0; color: var(--apple-accent); cursor: pointer; font-size: 11px; font-weight: 600; padding: 4px 6px; border-radius: 4px; }
+.input-with-btn button:hover { background: var(--apple-accent-light); }
+.secondary-btn { border: 1px solid var(--apple-line); background: rgba(255,255,255,0.5); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; color: var(--apple-text); cursor: pointer; text-align: left; transition: 0.1s; font-weight: 500; }
+.secondary-btn:hover { background: #ffffff; border-color: rgba(0,0,0,0.15); }
+.delete-btn { width: 100%; padding: 10px; border: 1px solid rgba(244, 63, 94, 0.2); color: #e11d48; background: rgba(244, 63, 94, 0.05); border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12.5px; transition: 0.15s; margin-top: auto; }
+.delete-btn:hover { background: rgba(244, 63, 94, 0.1); border-color: rgba(244, 63, 94, 0.3); }
+
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.15); backdrop-filter: blur(2px); z-index: 99; display: none; }
+.modal-overlay.open { display: block; }
+.floating-add { position: fixed; bottom: 24px; right: 24px; width: 46px; height: 46px; border-radius: 50%; background: var(--apple-accent); color: white; display: grid; place-items: center; font-size: 20px; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 113, 227, 0.3); z-index: 90; border: 0; transition: transform 0.15s; }
+.floating-add:hover { transform: scale(1.05); }
+
+.config-card { border: 1px solid rgba(0, 0, 0, 0.07); border-radius: 18px; padding: 24px; background: var(--apple-panel); margin-bottom: 18px; box-shadow: 0 8px 28px rgba(20, 38, 63, 0.045); }
+.config-card-header { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 20px; }
+.config-card-icon { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 12px; display: grid; place-items: center; color: var(--apple-accent); background: linear-gradient(145deg, rgba(0,113,227,.13), rgba(34,184,255,.06)); font-size: 20px; }
+.config-card.export .config-card-icon { color: #b45309; background: linear-gradient(145deg, rgba(245,158,11,.15), rgba(251,191,36,.06)); }
+.config-card h3 { margin: 1px 0 5px; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+.config-card p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--apple-muted); }
+.file-picker { display: flex; align-items: center; gap: 14px; padding: 16px; border: 1.5px dashed rgba(0,113,227,.25); border-radius: 13px; background: rgba(0,113,227,.035); transition: border-color .15s, background .15s, box-shadow .15s; }
+.file-picker:hover, .file-picker:focus-within { border-color: var(--apple-accent); background: rgba(0,113,227,.055); box-shadow: 0 0 0 3px rgba(0,113,227,.07); }
+.file-picker input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.file-select-button { flex: 0 0 auto; padding: 9px 14px; border-radius: 9px; background: #fff; border: 1px solid rgba(0,0,0,.1); color: var(--apple-text); font-size: 12.5px; font-weight: 650; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.04); transition: transform .15s, border-color .15s; }
+.file-select-button:hover { border-color: var(--apple-accent); transform: translateY(-1px); }
+.file-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: var(--apple-text); }
+.file-hint { font-size: 11.5px; color: var(--apple-muted); }
+.config-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+.config-card button { min-height: 38px; padding: 8px 17px; font-size: 12.5px; font-weight: 650; border-radius: 9px; border: 1px solid var(--apple-line); background: white; color: var(--apple-text); cursor: pointer; transition: transform .15s, background .15s, opacity .15s; }
+.config-card button:hover:not(:disabled) { background: #f5f5f7; transform: translateY(-1px); }
+.config-card button.active { background: var(--apple-accent); color: white; border-color: var(--apple-accent); box-shadow: 0 4px 12px rgba(0,113,227,.18); }
+.config-card button.active:hover:not(:disabled) { background: #0077ed; }
+.config-card button:disabled { cursor: not-allowed; opacity: .42; box-shadow: none; }
+.field-stack { flex: 1; min-width: 220px; }
+.config-card label { display: block; font-size: 11.5px; font-weight: 650; color: var(--apple-text); margin-bottom: 7px; }
+.password-field { position: relative; }
+.password-field .field-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--apple-muted); font-size: 13px; pointer-events: none; }
+.config-card input[type="password"] { height: 40px; padding: 8px 12px 8px 36px; border-radius: 10px; border: 1px solid var(--apple-line); background: #fff; color: inherit; width: 100%; outline: none; font: inherit; transition: border-color .15s, box-shadow .15s; }
+.config-card input[type="password"]:focus { border-color: var(--apple-accent); box-shadow: 0 0 0 3px rgba(0,113,227,.1); }
+.security-warning { display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px; margin: 0 0 17px !important; border: 1px solid rgba(245,158,11,.2); border-radius: 10px; background: rgba(245,158,11,.075); color: #92400e !important; }
+.result-message:empty { display: none; }
+.result-message { padding: 11px 13px; border-radius: 10px; background: #f5f5f7; }
+
+/* Security Center */
+.security-shell { display: flex; flex-direction: column; gap: 18px; }
+.security-hero { display: grid; grid-template-columns: 210px 1fr; gap: 28px; padding: 26px; border: 1px solid rgba(0,0,0,.07); border-radius: 20px; background: linear-gradient(135deg, #fff 52%, rgba(0,113,227,.035)); box-shadow: 0 12px 35px rgba(20,38,63,.055); }
+.score-ring { --score: 0; --score-color: #ef4444; width: 170px; height: 170px; margin: auto; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--score-color) calc(var(--score) * 1%), #edf0f4 0); position: relative; transition: background .4s ease; }
+.score-ring::before { content: ''; position: absolute; inset: 15px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.045); }
+.score-center { position: relative; text-align: center; }
+.score-value { display: block; font-size: 42px; line-height: 1; font-weight: 760; letter-spacing: -.05em; color: var(--apple-text); }
+.score-caption { display: block; margin-top: 7px; color: var(--apple-muted); font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .08em; }
+.security-summary { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.security-eyebrow { color: var(--apple-accent); font-size: 10.5px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+.security-summary h2 { margin: 7px 0 6px; font-size: 24px; letter-spacing: -.035em; }
+.security-summary > p { margin: 0; color: var(--apple-muted); font-size: 12.5px; line-height: 1.55; }
+.security-distribution { display: flex; height: 8px; overflow: hidden; margin: 20px 0 14px; border-radius: 99px; background: #edf0f4; }
+.security-distribution span { min-width: 0; transition: width .35s ease; }
+.dist-weak { background: #ef4444; } .dist-medium { background: #f59e0b; } .dist-strong { background: #22a65a; }
+.security-recommendation { display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; border-radius: 11px; background: rgba(0,113,227,.055); color: #28445e; font-size: 12px; line-height: 1.45; }
+.security-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.security-stat { padding: 16px; border: 1px solid rgba(0,0,0,.065); border-radius: 14px; background: #fff; box-shadow: 0 5px 18px rgba(20,38,63,.035); }
+.stat-top { display: flex; align-items: center; justify-content: space-between; color: var(--apple-muted); font-size: 11.5px; font-weight: 650; }
+.stat-dot { width: 9px; height: 9px; border-radius: 50%; }
+.stat-number { display: block; margin-top: 8px; font-size: 26px; font-weight: 730; letter-spacing: -.03em; }
+.security-table-card { overflow: hidden; border: 1px solid rgba(0,0,0,.07); border-radius: 18px; background: #fff; box-shadow: 0 8px 28px rgba(20,38,63,.04); }
+.security-filters { display: flex; gap: 7px; overflow-x: auto; padding: 14px 16px; border-bottom: 1px solid var(--apple-line); }
+.security-filter { flex: 0 0 auto; padding: 7px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--apple-muted); cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 650; }
+.security-filter:hover { background: #f5f5f7; color: var(--apple-text); }
+.security-filter.active { background: var(--apple-accent-light); color: var(--apple-accent); }
+.security-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.security-table th { padding: 11px 16px; background: #fafafa; color: var(--apple-muted); text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+.security-table td { padding: 13px 16px; border-top: 1px solid rgba(0,0,0,.045); font-size: 12.5px; vertical-align: middle; }
+.security-site { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.security-site-icon { width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border-radius: 8px; background: var(--apple-accent-light); color: var(--apple-accent); overflow: hidden; }
+.security-site-icon img { width: 100%; height: 100%; object-fit: cover; }
+.security-site-copy { min-width: 0; } .security-site-copy strong, .security-site-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.security-site-copy span { margin-top: 2px; color: var(--apple-muted); font-size: 11px; }
+.strength-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+.strength-pill.weak { color: #b42318; background: #fff0ee; } .strength-pill.medium { color: #a15c00; background: #fff7df; } .strength-pill.strong { color: #167342; background: #eaf8f0; }
+.reuse-badge { color: #7c3aed; font-size: 11px; font-weight: 650; }
+.security-edit { padding: 6px 10px; border: 1px solid var(--apple-line); border-radius: 7px; background: #fff; color: var(--apple-accent); cursor: pointer; font-size: 11.5px; font-weight: 650; }
+.security-empty { padding: 40px 20px; color: var(--apple-muted); text-align: center; font-size: 12.5px; }
+@media (max-width: 850px) { .security-hero { grid-template-columns: 1fr; } .security-stats { grid-template-columns: repeat(2,1fr); } .security-table th:nth-child(2), .security-table td:nth-child(2) { display:none; } }
+@media (max-width: 720px) { .config-actions { align-items: stretch; flex-direction: column; } .config-actions button { width: 100%; } .field-stack { width: 100%; min-width: 0; } .file-picker { align-items: stretch; flex-direction: column; } }
+</style></head><body>
+<div class="modal-overlay" id="overlay"></div>
+<aside class="sidebar">
+  <div class="brand"><img src="logo.svg" alt="logo" class="logo-img"><h1>Aegis Vault</h1></div>
+  <ul class="nav-menu">
+    <li class="nav-item active" id="menuLogins">🔑 Logins</li>
+    <li class="nav-item" id="menuSecurity">🛡️ Security Center</li>
+    <li class="nav-item" id="menuIdentity">👤 Identity</li>
+    <li class="nav-item" id="menuSettings">⚙️ Settings</li>
+  </ul>
+  <div class="sidebar-bottom">
+    <div class="promo-box">
+      <strong>Zero-Knowledge Security</strong>
+      Mọi mật khẩu đều được mã hóa hoàn toàn cục bộ trên thiết bị của bạn trước khi ghi xuống bộ nhớ.
+    </div>
+    <div class="sidebar-footer">© 2026 Aegis Vault</div>
+  </div>
+</aside>
+<main class="main-content">
+  <header class="top-bar">
+    <div class="top-search-wrapper">
+      <span class="top-search-icon">⌕</span>
+      <input type="search" id="dashboardSearch" placeholder="Search Aegis Vault">
+    </div>
+    <div class="top-right">
+      <span class="top-help" title="Trợ giúp">❓</span>
+      <div class="top-user hidden" id="topUserBtn">
+        <div class="top-avatar" id="googleAvatar">?</div>
+        <span id="profileEmail" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        
+        <!-- Dropdown Menu -->
+        <div id="userDropdown" class="user-dropdown hidden">
+          <button id="dropdownChangePassword" class="dropdown-item">🔑 Đổi mật khẩu chính</button>
+          <div class="dropdown-divider"></div>
+          <button id="dropdownSignOut" class="dropdown-item danger">🚪 Đăng xuất Google</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <nav class="sub-tabs-bar" id="subTabsBar">
+    <div class="sub-tab active" data-tab="popular">Popular</div>
+    <div class="sub-tab" data-tab="recent">Recently Used</div>
+    <div class="sub-tab" data-tab="az">A-Z</div>
+  </nav>
+  
+  <section class="grid-container" id="loginsSection">
+    <div class="grid" id="loginsGrid"></div>
+  </section>
+
+  <section class="grid-container hidden" id="securitySection">
+    <div class="security-shell">
+      <div class="security-hero">
+        <div class="score-ring" id="securityScoreRing">
+          <div class="score-center"><span class="score-value" id="securityScore">0</span><span class="score-caption">Điểm an toàn</span></div>
+        </div>
+        <div class="security-summary">
+          <span class="security-eyebrow">Aegis Security Center</span>
+          <h2 id="securityScoreLabel">Đang phân tích</h2>
+          <p>Mật khẩu được đánh giá cục bộ trong phiên đang mở khóa. Không dữ liệu nào được gửi ra ngoài.</p>
+          <div class="security-distribution" aria-label="Phân bố độ mạnh mật khẩu">
+            <span class="dist-weak" id="distWeak"></span><span class="dist-medium" id="distMedium"></span><span class="dist-strong" id="distStrong"></span>
+          </div>
+          <div class="security-recommendation"><span>✦</span><span id="securityRecommendation">Hãy mở khóa Vault để bắt đầu phân tích.</span></div>
+        </div>
+      </div>
+      <div class="security-stats">
+        <div class="security-stat"><div class="stat-top"><span>Mật khẩu mạnh</span><i class="stat-dot" style="background:#22a65a"></i></div><strong class="stat-number" id="strongCount">0</strong></div>
+        <div class="security-stat"><div class="stat-top"><span>Trung bình</span><i class="stat-dot" style="background:#f59e0b"></i></div><strong class="stat-number" id="mediumCount">0</strong></div>
+        <div class="security-stat"><div class="stat-top"><span>Mật khẩu yếu</span><i class="stat-dot" style="background:#ef4444"></i></div><strong class="stat-number" id="weakCount">0</strong></div>
+        <div class="security-stat"><div class="stat-top"><span>Đang dùng lại</span><i class="stat-dot" style="background:#8b5cf6"></i></div><strong class="stat-number" id="reusedCount">0</strong></div>
+      </div>
+      <div class="security-table-card">
+        <div class="security-filters" id="securityFilters">
+          <button class="security-filter active" data-security-filter="issues">Cần xử lý</button>
+          <button class="security-filter" data-security-filter="weak">Yếu</button>
+          <button class="security-filter" data-security-filter="medium">Trung bình</button>
+          <button class="security-filter" data-security-filter="strong">Mạnh</button>
+          <button class="security-filter" data-security-filter="reused">Dùng lại</button>
+          <button class="security-filter" data-security-filter="all">Tất cả</button>
+        </div>
+        <table class="security-table">
+          <thead><tr><th style="width:38%">Tài khoản</th><th style="width:22%">Mật khẩu</th><th style="width:18%">Độ mạnh</th><th style="width:12%">Rủi ro</th><th style="width:10%"></th></tr></thead>
+          <tbody id="securityTableBody"></tbody>
+        </table>
+        <div class="security-empty hidden" id="securityEmpty">Không có mật khẩu trong nhóm này.</div>
+      </div>
+    </div>
+  </section>
+  
+  <section class="grid-container hidden" id="identitySection">
+    <div class="config-card">
+      <h3>Tài khoản Google liên kết</h3>
+      <p>Thông tin xác thực Google OIDC dùng làm định danh xác minh chủ sở hữu vault.</p>
+      <div style="display:flex;gap:16px;align-items:center;margin-top:16px">
+        <div class="top-avatar" id="identityAvatar" style="width:56px;height:56px;font-size:22px">A</div>
+        <div>
+          <h4 id="identityName" style="margin:0 0 4px;font-size:14px">Chưa đăng nhập</h4>
+          <p id="identityEmail" style="margin:0;font-size:12.5px;color:var(--apple-muted)">Hãy click biểu tượng Aegis Vault ở thanh công cụ trình duyệt để liên kết.</p>
+        </div>
+      </div>
+    </div>
+    
+    <div class="config-card">
+      <h3>Đổi mật khẩu chính</h3>
+      <p>Thay đổi mật khẩu chính dùng để mã hóa và giải mã kho mật khẩu cục bộ của bạn.</p>
+      <div style="max-width: 320px; display: flex; flex-direction: column;">
+        <div>
+          <label for="changeCurrentPassword">Mật khẩu chính hiện tại</label>
+          <input id="changeCurrentPassword" type="password" style="width: 100%;">
+        </div>
+        <div>
+          <label for="changeNewPassword">Mật khẩu chính mới (tối thiểu 10 ký tự)</label>
+          <input id="changeNewPassword" type="password" style="width: 100%;">
+        </div>
+        <div>
+          <label for="changeConfirmPassword">Xác nhận mật khẩu chính mới</label>
+          <input id="changeConfirmPassword" type="password" style="width: 100%;">
+        </div>
+        <button id="changePasswordBtn" class="active" style="width: 100%; margin-top: 8px;">Cập nhật mật khẩu chính</button>
+        <p id="changePasswordResult" style="margin: 12px 0 0; font-size: 12.5px; font-weight: 500; white-space: pre-wrap;"></p>
+      </div>
+    </div>
+  </section>
+  
+  <section class="grid-container hidden" id="settingsSection">
+    <div class="config-card">
+      <div class="config-card-header">
+        <div class="config-card-icon" aria-hidden="true">⇧</div>
+        <div>
+          <h3>Nhập dữ liệu từ LastPass</h3>
+          <p>Chọn tệp CSV đã xuất từ LastPass. Bạn có thể xem trước và kiểm tra dữ liệu trước khi đưa vào Vault.</p>
+        </div>
+      </div>
+      <div class="file-picker">
+        <input id="csvFile" type="file" accept=".csv,text/csv">
+        <label class="file-select-button" for="csvFile">Chọn tệp CSV</label>
+        <div class="file-meta">
+          <span class="file-name" id="csvFileName">Chưa chọn tệp</span>
+          <span class="file-hint">Định dạng hỗ trợ: .csv · Tệp không được tải lên máy chủ</span>
+        </div>
+      </div>
+      <div class="config-actions">
+        <button id="previewButton" disabled>Xem trước dữ liệu</button>
+        <button id="importButton" class="active" disabled>Nhập vào Vault</button>
+      </div>
+      <p id="importResult" class="result-message" style="white-space:pre-wrap;margin-top:16px;color:var(--apple-muted);font-size:12.5px"></p>
+    </div>
+    <div class="config-card export">
+      <div class="config-card-header">
+        <div class="config-card-icon" aria-hidden="true">⇩</div>
+        <div>
+          <h3>Xuất dữ liệu Vault</h3>
+          <p>Tải bản sao dữ liệu đăng nhập về máy dưới định dạng CSV.</p>
+        </div>
+      </div>
+      <p class="security-warning"><span aria-hidden="true">⚠</span><span>Tệp xuất chứa mật khẩu ở dạng có thể đọc. Chỉ lưu trên thiết bị tin cậy và xóa tệp ngay sau khi sử dụng.</span></p>
+      <div class="config-actions">
+        <div class="field-stack">
+          <label for="exportPassword">Mật khẩu chính để xác nhận</label>
+          <div class="password-field">
+            <span class="field-icon" aria-hidden="true">●</span>
+            <input id="exportPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu chính">
+          </div>
+        </div>
+        <button id="exportButton" class="active">Tải tệp CSV</button>
+      </div>
+      <p id="exportResult" class="result-message" style="margin-top:14px;font-size:12.5px"></p>
+    </div>
+  </section>
+</main>
+
+<button class="floating-add" id="addBtn">+</button>
+
+<div class="drawer" id="drawer">
+  <div class="drawer-header">
+    <div class="drawer-header-left">
+      <div class="logo-badge" id="drawerLogo">🔒</div>
+      <h3 id="drawerTitle">facebook.com</h3>
+    </div>
+    <div class="drawer-actions">
+      <button id="drawerCancel">Cancel</button>
+      <button id="drawerSave" class="save">Save</button>
+    </div>
+  </div>
+  <div class="drawer-body">
+    <input type="hidden" id="editId">
+    
+    <div class="form-section-title">Thông tin chung</div>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="editTitle" placeholder="facebook.com">
+    </div>
+    <div class="form-group">
+      <label>Go to URL</label>
+      <div class="input-with-btn">
+        <input type="url" id="editUrl" placeholder="https://www.facebook.com/">
+        <button id="openUrlBtn" type="button">Open ↗</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Match URL</label>
+      <input type="text" id="editMatchUrl" placeholder="Khớp tên miền mặc định" readonly>
+    </div>
+    
+    <div class="form-section-title">Thông tin tài khoản</div>
+    <div class="form-group">
+      <label>User ID</label>
+      <input type="text" id="editUsername">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <div class="input-with-btn">
+        <input type="password" id="editPassword">
+        <button id="togglePassword" type="button">Show</button>
+      </div>
+    </div>
+    
+    <button class="secondary-btn" type="button">+ Add Field</button>
+    <button class="secondary-btn" type="button">+ Add authenticator setup key</button>
+    
+    <div class="form-section-title">Ghi chú bổ sung</div>
+    <div class="form-group">
+      <textarea id="editNotes" rows="3" placeholder="Ghi chú bảo mật..."></textarea>
+    </div>
+    
+    <button class="delete-btn" id="deleteBtn" type="button">Xóa tài khoản này</button>
+  </div>
+</div>
+
+<script type="module" src="options.js"></script>
+</body></html>
