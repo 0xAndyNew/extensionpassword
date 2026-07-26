@@ -471,7 +471,7 @@ $('otpImportBtn').onclick = async () => {
   }
 };
 $('otpExportBtn').onclick=async()=>{if(!confirm('File xuất chứa secret OTP có thể tạo mã đăng nhập. Tiếp tục?'))return;const r=await send({type:'OTP_EXPORT_TXT',masterPassword:$('otpExportPassword').value});if(!r.ok)return $('otpExportResult').textContent=r.error;downloadText(r.text,`aegis-authenticator-${dateStamp()}.txt`);$('otpExportResult').textContent=`Đã xuất ${r.count} mã OTP.`;};
-$('fullBackupButton').onclick=async()=>{if(!confirm('Bản sao lưu chứa toàn bộ mật khẩu và secret OTP ở dạng có thể đọc. Chỉ tiếp tục trên thiết bị tin cậy.'))return;const r=await send({type:'EXPORT_FULL_BACKUP',masterPassword:$('fullBackupPassword').value});if(!r.ok)return $('fullBackupResult').textContent=r.error;downloadText(r.backup,`aegis-full-backup-${dateStamp()}.json`,'application/json;charset=utf-8');$('fullBackupResult').textContent=`Đã sao lưu ${r.counts.credentials} tài khoản và ${r.counts.otp} mã OTP.`;};
+
 
 $('changePasswordBtn').onclick = async () => {
   const currentPassword = $('changeCurrentPassword').value;
