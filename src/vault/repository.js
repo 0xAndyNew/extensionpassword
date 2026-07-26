@@ -83,12 +83,13 @@ export async function createVault(password, user) {
   if (password.length < 10) throw new Error('Mật khẩu chính phải có ít nhất 10 ký tự.'); 
   const data = { 
     owner: { googleSub: user.sub, email: user.email }, 
-    credentials: [], 
-    excludedOrigins: [], 
-    settings: { lockMinutes: 15 } 
+    credentials: [],
+    otpAccounts: [],
+    excludedOrigins: [],
+    settings: {}
   }; 
   await writeVault(data, password, user.sub); 
-  await setSessionPassword(password, data.settings?.lockMinutes); 
+  await setSessionPassword(password);
   return data; 
 }
 
@@ -118,7 +119,11 @@ export async function unlockVault(password, user) {
     data.owner = { googleSub: user.sub, email: user.email }; 
     await writeVault(data, password, user.sub); 
   } 
-  await setSessionPassword(password, data.settings?.lockMinutes); 
+  if (!Array.isArray(data.otpAccounts)) {
+    data.otpAccounts = [];
+    await writeVault(data, password, user.sub);
+  }
+  await setSessionPassword(password);
   return data; 
 }
 
@@ -172,10 +177,9 @@ export async function syncFromGDrive(googleSub) {
   }
 }
 
-export async function setSessionPassword(password, lockMinutes = 15) { 
+export async function setSessionPassword(password) {
   await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }); 
   await chrome.storage.session.set({ [SESSION_KEY]: password }); 
-  await chrome.alarms.create('auto-lock', { delayInMinutes: Number(lockMinutes) || 15 }); 
 }
 
 export async function getSessionPassword() { 
@@ -195,7 +199,7 @@ export async function changeMasterPassword(currentPassword, newPassword, user) {
     throw new Error('Mật khẩu chính hiện tại không chính xác.');
   }
   await writeVault(data, newPassword, user.sub);
-  await setSessionPassword(newPassword, data.settings?.lockMinutes);
+  await setSessionPassword(newPassword);
   return data;
 }
 

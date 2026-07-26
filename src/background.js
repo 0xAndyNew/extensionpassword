@@ -2,8 +2,8 @@ import { hasVault, createVault, unlockVault, readVault, writeVault, getSessionPa
 import { matchesOrigin, normalizeOrigin } from './vault/domain-policy.js';
 import { parseLastPassCsv, serializeLastPassCsv } from './vault/csv.js';
 import { getGoogleUser, signInWithGoogle, signOutGoogle } from './auth/google-auth.js';
+import { parseAuthenticatorText, serializeAuthenticatorText, parseOtpAuthUri, normalizeSecret } from './vault/totp.js';
 
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'auto-lock') lockVault(); });
 chrome.runtime.onMessage.addListener((message, sender, respond) => { handle(message, sender).then(result => respond({ ok: true, ...result })).catch(error => respond({ ok: false, error: error.message })); return true; });
 async function requireUser() { const user = await getGoogleUser(); if (!user) throw new Error('Hãy đăng nhập Google trước.'); return user; }
 async function handle(message) {
@@ -65,18 +65,51 @@ async function handle(message) {
     await readVault(message.masterPassword, user.sub);
     return { csv: serializeLastPassCsv(vault.credentials), count: vault.credentials.length };
   }
-  if (message.type === 'UPDATE_LOCK_MINUTES') { 
-    vault.settings = vault.settings || {}; 
-    vault.settings.lockMinutes = message.minutes; 
-    await writeVault(vault, password, user.sub); 
-    await chrome.alarms.create('auto-lock', { delayInMinutes: Number(message.minutes) || 15 });
-    return {}; 
+  const otpAccounts = Array.isArray(vault.otpAccounts) ? vault.otpAccounts : [];
+  if (message.type === 'OTP_LIST') return { otpAccounts };
+  if (message.type === 'OTP_SAVE') {
+    const parsed = message.uri ? parseOtpAuthUri(message.uri) : {
+      issuer: String(message.issuer || '').trim(), account: String(message.account || '').trim(),
+      secret: normalizeSecret(message.secret || ''), algorithm: message.algorithm || 'SHA1',
+      digits: Number(message.digits || 6), period: Number(message.period || 30)
+    };
+    if (!parsed.issuer && !parsed.account) throw new Error('Hãy nhập dịch vụ hoặc tài khoản.');
+    const now = new Date().toISOString();
+    if (message.id) {
+      const item = otpAccounts.find(value => value.id === message.id);
+      if (!item) throw new Error('Không tìm thấy mã OTP.');
+      Object.assign(item, parsed, { updatedAt: now });
+    } else otpAccounts.push({ id: crypto.randomUUID(), ...parsed, createdAt: now, updatedAt: now });
+    vault.otpAccounts = otpAccounts; await writeVault(vault, password, user.sub); return {};
   }
+  if (message.type === 'OTP_DELETE') { vault.otpAccounts = otpAccounts.filter(item => item.id !== message.id); await writeVault(vault, password, user.sub); return {}; }
+  if (message.type === 'OTP_REORDER') {
+    const ids = message.ids || [];
+    if (ids.length !== otpAccounts.length || new Set(ids).size !== ids.length || ids.some(id => !otpAccounts.some(item => item.id === id))) throw new Error('Thứ tự OTP không hợp lệ.');
+    vault.otpAccounts = ids.map(id => otpAccounts.find(item => item.id === id)); await writeVault(vault, password, user.sub); return {};
+  }
+  if (message.type === 'OTP_IMPORT_PREVIEW') {
+    const parsed = parseAuthenticatorText(message.text);
+    const duplicates = parsed.records.filter(record => otpAccounts.some(item => item.secret === record.secret && item.account === record.account)).length;
+    return { preview: { ...parsed, records: undefined, valid: parsed.records.length, duplicates } };
+  }
+  if (message.type === 'OTP_IMPORT_COMMIT') {
+    const parsed = parseAuthenticatorText(message.text); let imported = 0;
+    parsed.records.forEach(record => { if (!otpAccounts.some(item => item.secret === record.secret && item.account === record.account)) { otpAccounts.push({ id: crypto.randomUUID(), ...record, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); imported++; } });
+    vault.otpAccounts = otpAccounts; await writeVault(vault, password, user.sub); return { imported, errors: parsed.errors };
+  }
+  if (message.type === 'OTP_EXPORT_TXT') { await readVault(message.masterPassword, user.sub); return { text: serializeAuthenticatorText(otpAccounts), count: otpAccounts.length }; }
+  if (message.type === 'EXPORT_FULL_BACKUP') {
+    await readVault(message.masterPassword, user.sub);
+    return { backup: JSON.stringify({ format: 'aegis-vault-backup', version: 1, exportedAt: new Date().toISOString(), data: { credentials: vault.credentials, otpAccounts, excludedOrigins: vault.excludedOrigins || [], settings: vault.settings || {} } }, null, 2), counts: { credentials: vault.credentials.length, otp: otpAccounts.length } };
+  }
+  // Giữ lại để tương thích với giao diện/phiên bản cũ; vault chỉ khóa khi phiên Chrome kết thúc.
+  if (message.type === 'UPDATE_LOCK_MINUTES') return {};
   if (message.type === 'CHANGE_PASSWORD') {
     await changeMasterPassword(message.currentPassword, message.newPassword, user);
     return {};
   }
-  if (message.type === 'GET_SETTINGS') return { settings: vault.settings || { lockMinutes: 15 } };
+  if (message.type === 'GET_SETTINGS') return { settings: {} };
   throw new Error('Hành động không hợp lệ.');
 }
 function upsert(vault, cred) {

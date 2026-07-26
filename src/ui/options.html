@@ -156,12 +156,15 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .config-card button.active { background: var(--apple-accent); color: white; border-color: var(--apple-accent); box-shadow: 0 4px 12px rgba(0,113,227,.18); }
 .config-card button.active:hover:not(:disabled) { background: #0077ed; }
 .config-card button:disabled { cursor: not-allowed; opacity: .42; box-shadow: none; }
-.field-stack { flex: 1; min-width: 220px; }
+.field-stack { flex: 0 1 360px; min-width: 240px; max-width: 360px; }
 .config-card label { display: block; font-size: 11.5px; font-weight: 650; color: var(--apple-text); margin-bottom: 7px; }
 .password-field { position: relative; }
 .password-field .field-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--apple-muted); font-size: 13px; pointer-events: none; }
-.config-card input[type="password"] { height: 40px; padding: 8px 12px 8px 36px; border-radius: 10px; border: 1px solid var(--apple-line); background: #fff; color: inherit; width: 100%; outline: none; font: inherit; transition: border-color .15s, box-shadow .15s; }
+.config-card input[type="password"] { box-sizing:border-box; display:block; height:40px; padding:8px 12px; border-radius:10px; border:1px solid var(--apple-line); background:#fff; color:inherit; width:100%; max-width:360px; outline:none; font:inherit; transition:border-color .15s,box-shadow .15s; }
+.password-field input[type="password"] { padding-left:36px; }
 .config-card input[type="password"]:focus { border-color: var(--apple-accent); box-shadow: 0 0 0 3px rgba(0,113,227,.1); }
+.compact-export-actions { justify-content:flex-start; align-items:flex-end; flex-wrap:wrap; }
+.compact-export-actions > button { flex:0 0 auto; white-space:nowrap; margin-bottom:1px; }
 .security-warning { display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px; margin: 0 0 17px !important; border: 1px solid rgba(245,158,11,.2); border-radius: 10px; background: rgba(245,158,11,.075); color: #92400e !important; }
 .result-message:empty { display: none; }
 .result-message { padding: 11px 13px; border-radius: 10px; background: #f5f5f7; }
@@ -354,25 +357,25 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
       </div>
       <p id="importResult" class="result-message" style="white-space:pre-wrap;margin-top:16px;color:var(--apple-muted);font-size:12.5px"></p>
     </div>
+    <div class="config-card">
+      <div class="config-card-header"><div class="config-card-icon">⌁</div><div><h3>Nhập & xuất mã OTP</h3><p>Tương thích Authenticator TXT: mỗi dòng là một URI otpauth://totp.</p></div></div>
+      <div class="file-picker"><input id="otpTextFile" type="file" accept=".txt,text/plain"><label class="file-select-button" for="otpTextFile">Chọn Authenticator TXT</label><div class="file-meta"><span class="file-name" id="otpTextFileName">Chưa chọn tệp</span><span class="file-hint">Secret chỉ được xử lý cục bộ trong Vault</span></div></div>
+      <div class="config-actions"><button id="otpPreviewBtn" disabled>Xem trước</button><button id="otpImportBtn" class="active" disabled>Nhập OTP</button></div><p id="otpImportResult" class="result-message" style="white-space:pre-wrap"></p>
+      <p class="security-warning"><span>⚠</span><span>Tệp OTP chứa secret có thể tạo mã đăng nhập. Hãy giữ tệp ở nơi an toàn.</span></p>
+      <div class="config-actions compact-export-actions"><div class="field-stack"><label for="otpExportPassword">Mật khẩu chính</label><input id="otpExportPassword" type="password" autocomplete="current-password"></div><button id="otpExportBtn" class="active">Xuất OTP TXT</button></div><p id="otpExportResult" class="result-message"></p>
+    </div>
+    <div class="config-card export">
+      <div class="config-card-header"><div class="config-card-icon">◆</div><div><h3>Sao lưu toàn bộ Aegis</h3><p>Xuất tất cả tài khoản, mật khẩu, ghi chú, cấu hình và toàn bộ OTP.</p></div></div>
+      <p class="security-warning"><span>⚠</span><span>File JSON chứa mật khẩu và secret OTP có thể đọc được. Chỉ lưu trên thiết bị tin cậy.</span></p>
+      <div class="config-actions compact-export-actions"><div class="field-stack"><label for="fullBackupPassword">Mật khẩu chính để xác nhận</label><input id="fullBackupPassword" type="password" autocomplete="current-password"></div><button id="fullBackupButton" class="active">Xuất toàn bộ JSON</button></div><p id="fullBackupResult" class="result-message"></p>
+    </div>
     <div class="config-card export">
       <div class="config-card-header">
         <div class="config-card-icon" aria-hidden="true">⇩</div>
-        <div>
-          <h3>Xuất dữ liệu Vault</h3>
-          <p>Tải bản sao dữ liệu đăng nhập về máy dưới định dạng CSV.</p>
-        </div>
+        <div><h3>Xuất dữ liệu LastPass</h3><p>Xuất riêng dữ liệu đăng nhập dưới định dạng CSV tương thích LastPass.</p></div>
       </div>
-      <p class="security-warning"><span aria-hidden="true">⚠</span><span>Tệp xuất chứa mật khẩu ở dạng có thể đọc. Chỉ lưu trên thiết bị tin cậy và xóa tệp ngay sau khi sử dụng.</span></p>
-      <div class="config-actions">
-        <div class="field-stack">
-          <label for="exportPassword">Mật khẩu chính để xác nhận</label>
-          <div class="password-field">
-            <span class="field-icon" aria-hidden="true">●</span>
-            <input id="exportPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu chính">
-          </div>
-        </div>
-        <button id="exportButton" class="active">Tải tệp CSV</button>
-      </div>
+      <p class="security-warning"><span aria-hidden="true">⚠</span><span>Tệp xuất chứa mật khẩu ở dạng có thể đọc. Chỉ lưu trên thiết bị tin cậy.</span></p>
+      <div class="config-actions compact-export-actions"><div class="field-stack"><label for="exportPassword">Mật khẩu chính để xác nhận</label><div class="password-field"><span class="field-icon">●</span><input id="exportPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu chính"></div></div><button id="exportButton" class="active">Tải tệp CSV</button></div>
       <p id="exportResult" class="result-message" style="margin-top:14px;font-size:12.5px"></p>
     </div>
   </section>

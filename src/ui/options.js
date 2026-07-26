@@ -5,6 +5,8 @@ let csvText = '';
 let managerCredentials = [];
 let activeSubTab = 'popular';
 let importValidCount = 0;
+let otpText = '';
+let otpImportValidCount = 0;
 let securityReport = analyzeCredentials([]);
 let activeSecurityFilter = 'issues';
 
@@ -434,15 +436,42 @@ $('importButton').onclick = async () => {
 $('exportButton').onclick = async () => {
   const response = await send({ type: 'EXPORT_CSV', masterPassword: $('exportPassword').value });
   if (!response.ok) return $('exportResult').textContent = response.error;
-  const blob = new Blob([response.csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `aegis-vault-${new Date().toISOString().slice(0, 10)}.csv`;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadText(response.csv, `aegis-lastpass-${dateStamp()}.csv`, 'text/csv;charset=utf-8');
   $('exportResult').textContent = `Đã xuất ${response.count} tài khoản.`;
 };
+function dateStamp(){return new Date().toISOString().slice(0,10);}
+function downloadText(text,name,type='text/plain;charset=utf-8'){const url=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+$('otpTextFile').onchange=async event=>{const file=event.target.files[0];otpText=file?await file.text():'';$('otpTextFileName').textContent=file?file.name:'Chưa chọn tệp';$('otpPreviewBtn').disabled=!file;$('otpImportBtn').disabled=true;$('otpImportResult').textContent='';};
+$('otpPreviewBtn').onclick=async()=>{const r=await send({type:'OTP_IMPORT_PREVIEW',text:otpText});if(!r.ok)return $('otpImportResult').textContent=r.error;otpImportValidCount=r.preview.valid;$('otpImportResult').textContent=`Tổng: ${r.preview.total}\nHợp lệ: ${r.preview.valid}\nTrùng (bỏ qua): ${r.preview.duplicates}\nLỗi: ${r.preview.errors.length}${r.preview.errors.slice(0,5).map(e=>`\n• Dòng ${e.row}: ${e.reason}`).join('')}`;$('otpImportBtn').disabled=!r.preview.valid;};
+$('otpImportBtn').onclick = async () => {
+  if (!confirm(`Nhập tối đa ${otpImportValidCount} mã OTP vào Vault?`)) return;
+  const button = $('otpImportBtn');
+  const result = $('otpImportResult');
+  button.disabled = true;
+  button.textContent = 'Đang nhập...';
+  result.style.color = 'var(--apple-accent)';
+  result.style.fontWeight = '600';
+  result.textContent = '⏳ Đang kiểm tra và mã hóa mã OTP...';
+  const response = await send({ type: 'OTP_IMPORT_COMMIT', text: otpText });
+  button.textContent = 'Nhập OTP';
+  if (response.ok) {
+    const skipped = Math.max(0, otpImportValidCount - response.imported);
+    result.style.color = 'var(--apple-green)';
+    result.textContent = `✅ Đã nhập xong ${response.imported} mã OTP.${skipped ? ` Bỏ qua ${skipped} mã đã tồn tại.` : ''}${response.errors.length ? ` Có ${response.errors.length} dòng lỗi.` : ''}`;
+    $('otpTextFile').value = '';
+    $('otpTextFileName').textContent = 'Chưa chọn tệp';
+    otpText = '';
+    otpImportValidCount = 0;
+    $('otpPreviewBtn').disabled = true;
+    button.disabled = true;
+  } else {
+    result.style.color = '#e11d48';
+    result.textContent = `❌ Nhập OTP thất bại: ${response.error}`;
+    button.disabled = false;
+  }
+};
+$('otpExportBtn').onclick=async()=>{if(!confirm('File xuất chứa secret OTP có thể tạo mã đăng nhập. Tiếp tục?'))return;const r=await send({type:'OTP_EXPORT_TXT',masterPassword:$('otpExportPassword').value});if(!r.ok)return $('otpExportResult').textContent=r.error;downloadText(r.text,`aegis-authenticator-${dateStamp()}.txt`);$('otpExportResult').textContent=`Đã xuất ${r.count} mã OTP.`;};
+$('fullBackupButton').onclick=async()=>{if(!confirm('Bản sao lưu chứa toàn bộ mật khẩu và secret OTP ở dạng có thể đọc. Chỉ tiếp tục trên thiết bị tin cậy.'))return;const r=await send({type:'EXPORT_FULL_BACKUP',masterPassword:$('fullBackupPassword').value});if(!r.ok)return $('fullBackupResult').textContent=r.error;downloadText(r.backup,`aegis-full-backup-${dateStamp()}.json`,'application/json;charset=utf-8');$('fullBackupResult').textContent=`Đã sao lưu ${r.counts.credentials} tài khoản và ${r.counts.otp} mã OTP.`;};
 
 $('changePasswordBtn').onclick = async () => {
   const currentPassword = $('changeCurrentPassword').value;

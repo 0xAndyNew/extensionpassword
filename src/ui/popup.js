@@ -1,5 +1,13 @@
+import { generateTotp, parseOtpAuthUri, serializeOtpAuthUri } from '../vault/totp.js';
+import qrcode from '../vendor/qrcode-generator.js';
+import jsQR from '../vendor/jsqr.js';
+
 const $ = id => document.getElementById(id);
 let credentials = [];
+let otpAccounts = [];
+let otpTimer = null;
+let cameraStream = null;
+let isOtpDragging = false;
 let activeSubTab = 'popular';
 let activeMainTab = 'logins';
 let currentOrigin = '';
@@ -19,7 +27,8 @@ const BLUE_GLOBE_SVG = `<svg viewBox="0 0 100 100" width="20" height="20" fill="
 const send = message => chrome.runtime.sendMessage(message);
 
 function setAccountControls(isSignedIn) {
-  $('optionsButton').classList.toggle('hidden', !isSignedIn);
+  $('profileButton').classList.toggle('hidden', !isSignedIn);
+  $('headerScanButton').classList.toggle('hidden', !isSignedIn);
   $('lockButton').classList.toggle('hidden', !isSignedIn);
 }
 
@@ -65,7 +74,7 @@ function updateProfileUI(user) {
   const email = user.email || '';
   const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'GA';
   
-  $('tabProfile').textContent = `👤 ${initials}`;
+  $('profileButton').textContent = initials;
   $('pFirstName').textContent = name;
   $('pEmail').textContent = email || 'Chưa có email';
 }
@@ -116,32 +125,17 @@ function render() {
 
   const container = $('credentialList');
   
-  // Ẩn/hiện giao diện dựa theo main tab hoạt động
   if (activeMainTab === 'profile') {
-    container.classList.add('hidden');
-    $('identityTabContent').classList.remove('hidden');
-    $('generatorTabContent').classList.add('hidden');
-    $('subTabs').classList.add('hidden');
-    $('floatAddBtn').classList.add('hidden');
-    return;
+    container.classList.add('hidden'); $('identityTabContent').classList.remove('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.add('hidden'); $('floatAddBtn').classList.add('hidden'); stopOtpTimer(); return;
   }
-  
   if (activeMainTab === 'generator') {
-    container.classList.add('hidden');
-    $('identityTabContent').classList.add('hidden');
-    $('generatorTabContent').classList.remove('hidden');
-    $('subTabs').classList.add('hidden');
-    $('floatAddBtn').classList.add('hidden');
-    generatePassword(); // Tự động tạo lần đầu khi mở tab
-    return;
+    container.classList.add('hidden'); $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.remove('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.add('hidden'); $('floatAddBtn').classList.add('hidden'); stopOtpTimer(); generatePassword(); return;
   }
-  
-  // Tab logins thông thường
+  if (activeMainTab === 'otp') {
+    container.classList.add('hidden'); $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.remove('hidden'); $('subTabs').classList.add('hidden'); $('floatAddBtn').classList.add('hidden'); loadOtp(); return;
+  }
   container.classList.remove('hidden');
-  $('identityTabContent').classList.add('hidden');
-  $('generatorTabContent').classList.add('hidden');
-  $('subTabs').classList.remove('hidden');
-  $('floatAddBtn').classList.remove('hidden');
+  $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.remove('hidden'); $('floatAddBtn').classList.remove('hidden'); stopOtpTimer();
 
   if (!list.length) {
     container.innerHTML = `<div style="padding:24px;text-align:center;color:#94a3b8;font-size:12px">Không có tài khoản nào được tìm thấy.</div>`;
@@ -278,7 +272,7 @@ $('authSignOutBtn').onclick = async (e) => {
 const mainTabs = [
   { id: 'tabLogins', key: 'logins' },
   { id: 'tabGenerator', key: 'generator' },
-  { id: 'tabProfile', key: 'profile' }
+  { id: 'tabOtp', key: 'otp' }
 ];
 
 mainTabs.forEach(tab => {
@@ -360,14 +354,198 @@ function generatePassword() {
   $('genPasswordDisplay').value = password;
 }
 
-$('optionsButton').onclick = async () => {
-  const status = await send({ type: 'STATUS' });
-  if (!status.ok || !status.user) {
-    $('optionsButton').classList.add('hidden');
-    return;
-  }
-  await send({ type: 'OPEN_OPTIONS' });
-  window.close();
+$('profileButton').onclick = () => {
+  mainTabs.forEach(t => $(t.id).classList.remove('active'));
+  activeMainTab = 'profile'; render();
 };
+
+async function loadOtp() {
+  const response = await send({ type: 'OTP_LIST' });
+  if (!response.ok) return;
+  otpAccounts = response.otpAccounts || [];
+  await renderOtp();
+  if (!otpTimer) otpTimer = setInterval(renderOtp, 1000);
+}
+function stopOtpTimer() { if (otpTimer) clearInterval(otpTimer); otpTimer = null; }
+async function renderOtp() {
+  if (activeMainTab !== 'otp' || isOtpDragging) return;
+  const q = $('searchInput').value.toLowerCase();
+  const list = otpAccounts.filter(item => `${item.issuer} ${item.account}`.toLowerCase().includes(q));
+  if (!list.length) { $('otpList').innerHTML = '<div style="padding:28px;text-align:center;color:#86868b;font-size:12px">Chưa có mã OTP. Chọn “Thêm mã” để bắt đầu.</div>'; return; }
+  const nodes = await Promise.all(list.map(async item => {
+    const card = document.createElement('article'); card.className = 'otp-card'; card.draggable = false; card.dataset.id = item.id;
+    const issuer = document.createElement('div'); issuer.className = 'otp-issuer'; issuer.textContent = item.issuer || item.account;
+    const code = document.createElement('div'); code.className = 'otp-code'; code.textContent = await generateTotp(item);
+    const account = document.createElement('div'); account.className = 'otp-account'; account.textContent = item.account || '';
+    const side = document.createElement('div'); side.className = 'otp-side';
+    const tools = document.createElement('div'); tools.className = 'otp-card-tools';
+    const dragHandle = document.createElement('button'); dragHandle.type = 'button'; dragHandle.className = 'otp-icon-btn otp-drag-btn'; dragHandle.title = 'Kéo để đổi thứ tự'; dragHandle.setAttribute('aria-label', `Kéo ${item.issuer || item.account} để đổi thứ tự`); dragHandle.textContent = '⠿';
+    const qrButton = document.createElement('button'); qrButton.type = 'button'; qrButton.className = 'otp-icon-btn otp-qr-btn'; qrButton.title = 'Hiển thị QR để quét'; qrButton.setAttribute('aria-label', `Hiển thị QR cho ${item.issuer || item.account}`); qrButton.textContent = '▦';
+    const editButton = document.createElement('button'); editButton.type = 'button'; editButton.className = 'otp-icon-btn'; editButton.title = 'Sửa hoặc xóa OTP'; editButton.setAttribute('aria-label', `Sửa ${item.issuer || item.account}`); editButton.textContent = '✎';
+    tools.append(dragHandle, qrButton, editButton);
+    const timer = document.createElement('span'); timer.className = 'otp-timer'; timer.title = `${item.period || 30} giây mỗi mã`;
+    const seconds = document.createElement('span'); timer.append(seconds);
+    side.append(tools, timer);
+    const remaining = (item.period || 30) - (Math.floor(Date.now()/1000) % (item.period || 30));
+    seconds.textContent = remaining;
+    code.classList.toggle('expiring', remaining <= 5);
+    timer.classList.toggle('expiring', remaining <= 5);
+    timer.style.setProperty('--timer-angle', `${remaining / (item.period || 30) * 360}deg`);
+    card.append(issuer, code, account, side);
+    dragHandle.onclick = event => event.stopPropagation();
+    dragHandle.onpointerdown = () => { card.draggable = true; };
+    qrButton.onclick = event => { event.stopPropagation(); showOtpQr(item); };
+    editButton.onclick = event => { event.stopPropagation(); openOtpEditor(item); };
+    card.onclick = async () => {
+      await navigator.clipboard.writeText(code.textContent);
+      const toast = $('otpCopyToast');
+      toast.classList.add('show');
+      clearTimeout(toast.hideTimer);
+      toast.hideTimer = setTimeout(() => toast.classList.remove('show'), 900);
+    };
+    card.ondragstart = event => {
+      if (!event.target.closest('.otp-card') || !card.draggable) { event.preventDefault(); return; }
+      isOtpDragging = true;
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', item.id);
+      requestAnimationFrame(() => card.classList.add('dragging'));
+    };
+    card.ondragover = event => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const dragging = $('otpList').querySelector('.dragging');
+      if (!dragging || dragging === card) return;
+      const rect = card.getBoundingClientRect();
+      card.parentNode.insertBefore(dragging, event.clientY < rect.top + rect.height / 2 ? card : card.nextSibling);
+    };
+    card.ondragend = async () => {
+      card.classList.remove('dragging');
+      card.draggable = false;
+      const visibleIds = [...$('otpList').querySelectorAll('.otp-card')].map(element => element.dataset.id);
+      let cursor = 0;
+      const visibleSet = new Set(visibleIds);
+      const ids = otpAccounts.map(account => visibleSet.has(account.id) ? visibleIds[cursor++] : account.id);
+      const response = await send({ type: 'OTP_REORDER', ids });
+      if (response.ok) otpAccounts = ids.map(id => otpAccounts.find(account => account.id === id));
+      isOtpDragging = false;
+      await renderOtp();
+    };
+    return card;
+  }));
+  $('otpList').replaceChildren(...nodes);
+}
+function showOtpQr(item) {
+  const qr = qrcode(0, 'M');
+  qr.addData(serializeOtpAuthUri(item));
+  qr.make();
+  const canvas = $('otpQrCanvas');
+  const context = canvas.getContext('2d');
+  const count = qr.getModuleCount();
+  const quiet = 4;
+  const total = count + quiet * 2;
+  canvas.width = canvas.height = 230;
+  context.fillStyle = '#ffffff'; context.fillRect(0, 0, 230, 230);
+  const scale = 230 / total;
+  context.fillStyle = '#000000';
+  for (let row = 0; row < count; row++) for (let col = 0; col < count; col++) if (qr.isDark(row, col)) {
+    const x1 = Math.round((col + quiet) * scale), y1 = Math.round((row + quiet) * scale);
+    const x2 = Math.round((col + quiet + 1) * scale), y2 = Math.round((row + quiet + 1) * scale);
+    context.fillRect(x1, y1, x2 - x1, y2 - y1);
+  }
+  $('otpQrTitle').textContent = item.issuer || 'Mã QR OTP';
+  $('otpQrLabel').textContent = item.account || '';
+  $('otpQrModal').classList.remove('hidden');
+}
+const otpQrCloseButton = $('otpQrCloseBtn');
+if (otpQrCloseButton) otpQrCloseButton.onclick = () => $('otpQrModal')?.classList.add('hidden');
+const otpQrModal = $('otpQrModal');
+if (otpQrModal) otpQrModal.onclick = event => { if (event.target === otpQrModal) otpQrModal.classList.add('hidden'); };
+function resetOtpEditor() {
+  ['otpEditId','otpUri','otpIssuer','otpAccount','otpSecret'].forEach(id => $(id).value = '');
+  $('otpDialogTitle').textContent = 'Thêm mã xác thực';
+  $('otpDeleteBtn').classList.remove('visible');
+  $('otpFormError').textContent = '';
+}
+function openOtpEditor(item = null) {
+  resetOtpEditor();
+  if (item) {
+    $('otpEditId').value = item.id;
+    $('otpIssuer').value = item.issuer || '';
+    $('otpAccount').value = item.account || '';
+    $('otpSecret').value = item.secret || '';
+    $('otpDialogTitle').textContent = 'Sửa mã xác thực';
+    $('otpDeleteBtn').classList.add('visible');
+  }
+  $('otpModal').classList.remove('hidden');
+}
+async function openCameraScanner() {
+  openOtpEditor();
+  $('otpDialogTitle').textContent = 'Quét QR thêm mã OTP';
+  await startOtpCamera();
+}
+function stopCamera(){ if(cameraStream) cameraStream.getTracks().forEach(track=>track.stop()); cameraStream=null; $('otpCamera').classList.add('hidden'); }
+function closeOtpModal(){ stopCamera(); resetOtpEditor(); $('otpModal').classList.add('hidden'); }
+const headerScanButton = $('headerScanButton');
+if (headerScanButton) headerScanButton.onclick = openCameraScanner;
+const otpCancelButton = $('otpCancelBtn');
+if (otpCancelButton) otpCancelButton.onclick = closeOtpModal;
+const otpSaveButton = $('otpSaveBtn');
+if (otpSaveButton) otpSaveButton.onclick=async()=>{const id=$('otpEditId').value;const uri=$('otpUri').value.trim();const r=await send(uri?{type:'OTP_SAVE',id,uri}:{type:'OTP_SAVE',id,issuer:$('otpIssuer').value,account:$('otpAccount').value,secret:$('otpSecret').value});if(!r.ok)return $('otpFormError').textContent=r.error;closeOtpModal();await loadOtp();};
+const otpDeleteButton = $('otpDeleteBtn');
+if (otpDeleteButton) otpDeleteButton.onclick=async()=>{const id=$('otpEditId').value;if(!id||!confirm('Xóa mã OTP này? Hành động không thể hoàn tác.'))return;const r=await send({type:'OTP_DELETE',id});if(!r.ok)return $('otpFormError').textContent=r.error;closeOtpModal();await loadOtp();};
+async function acceptQr(value){try{const parsed=parseOtpAuthUri(value);$('otpUri').value=value;$('otpIssuer').value=parsed.issuer;$('otpAccount').value=parsed.account;$('otpSecret').value=parsed.secret;stopCamera();}catch(error){$('otpFormError').textContent=error.message;}}
+function decodeQrFromSource(source) {
+  const width = source.videoWidth || source.width;
+  const height = source.videoHeight || source.height;
+  if (!width || !height) return null;
+  const maxWidth = 720;
+  const scale = Math.min(1, maxWidth / width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  return jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+}
+$('otpImageBtn').onclick=()=>$('otpQrFile').click();
+$('otpQrFile').onchange = async event => {
+  try {
+    const file = event.target.files[0];
+    if (!file) return;
+    const bitmap = await createImageBitmap(file);
+    const result = decodeQrFromSource(bitmap);
+    bitmap.close();
+    if (result?.data) acceptQr(result.data);
+    else $('otpFormError').textContent = 'Không tìm thấy QR trong ảnh. Hãy chọn ảnh rõ và không bị cắt.';
+  } catch (error) { $('otpFormError').textContent = `Không đọc được ảnh QR: ${error.message}`; }
+  finally { event.target.value = ''; }
+};
+async function startOtpCamera() {
+  try {
+    $('otpFormError').textContent = '';
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    const video = $('otpCamera');
+    video.srcObject = cameraStream;
+    video.classList.remove('hidden');
+    await video.play();
+    const scan = () => {
+      if (!cameraStream) return;
+      const result = decodeQrFromSource(video);
+      if (result?.data) return acceptQr(result.data);
+      requestAnimationFrame(scan);
+    };
+    requestAnimationFrame(scan);
+  } catch (error) {
+    stopCamera();
+    const denied = error.name === 'NotAllowedError';
+    $('otpFormError').textContent = denied ? 'Chrome đang chặn camera. Hãy cho phép Camera trong quyền của extension rồi thử lại.' : `Không mở được camera: ${error.message}`;
+  }
+}
+const otpCameraButton = $('otpCameraBtn');
+if (otpCameraButton) otpCameraButton.onclick = startOtpCamera;
+const advancedSettingsButton = $('advancedSettingsBtn');
+if (advancedSettingsButton) advancedSettingsButton.onclick = async () => { await send({ type: 'OPEN_OPTIONS' }); window.close(); };
+window.addEventListener('unload',()=>{stopOtpTimer();stopCamera();});
 
 init();
