@@ -7,8 +7,9 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $outputRoot = [System.IO.Path]::GetFullPath($OutputDirectory)
 $stagingRoot = Join-Path $outputRoot 'aegis-vault'
 $archivePath = Join-Path $outputRoot 'aegis-vault.zip'
+$projectPrefix = $projectRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
-if (-not $outputRoot.StartsWith($projectRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+if (-not $outputRoot.StartsWith($projectPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
   throw 'Output directory must be inside the project.'
 }
 
@@ -26,5 +27,32 @@ Get-ChildItem $stagingRoot -Recurse -File | Where-Object {
   throw "Secret key detected in package: $($_.FullName)"
 }
 
-Compress-Archive -Path (Join-Path $stagingRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archiveStream = [System.IO.File]::Open(
+  $archivePath,
+  [System.IO.FileMode]::CreateNew,
+  [System.IO.FileAccess]::ReadWrite,
+  [System.IO.FileShare]::None
+)
+$archive = New-Object System.IO.Compression.ZipArchive(
+  $archiveStream,
+  [System.IO.Compression.ZipArchiveMode]::Create,
+  $false
+)
+try {
+  Get-ChildItem $stagingRoot -Recurse -File | ForEach-Object {
+    $relativePath = $_.FullName.Substring($stagingRoot.Length)
+    $relativePath = $relativePath.TrimStart([char[]]@('\', '/')).Replace('\', '/')
+    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+      $archive,
+      $_.FullName,
+      $relativePath,
+      [System.IO.Compression.CompressionLevel]::Optimal
+    ) | Out-Null
+  }
+} finally {
+  $archive.Dispose()
+  $archiveStream.Dispose()
+}
 Write-Host "Portable package created: $archivePath"

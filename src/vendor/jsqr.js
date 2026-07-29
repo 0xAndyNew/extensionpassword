@@ -10100,4 +10100,3 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 /***/ })
 /******/ ])["default"];
 });
-export default globalThis.jsQR;

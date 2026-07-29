@@ -25,3 +25,15 @@ test('round trips exported credentials', () => {
   assert.equal(parsed.records[0].username, source[0].username);
   assert.equal(parsed.records[0].password, source[0].password);
 });
+
+test('rejects public HTTP credentials but keeps localhost available for development', () => {
+  const publicHttp = parseLastPassCsv(
+    'url,username,password,extra,name,grouping,fav\nhttp://example.com,user,Secret123!,,Example,,0'
+  );
+  const localHttp = parseLastPassCsv(
+    'url,username,password,extra,name,grouping,fav\nhttp://127.0.0.1:3000,user,Secret123!,,Local,,0'
+  );
+  assert.equal(publicHttp.records.length, 0);
+  assert.match(publicHttp.errors[0].reason, /HTTPS/);
+  assert.equal(localHttp.records.length, 1);
+});

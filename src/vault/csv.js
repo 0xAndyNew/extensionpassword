@@ -30,6 +30,9 @@ export function parseLastPassCsv(text) {
     try {
       const url = new URL(raw.url);
       if (!['http:', 'https:'].includes(url.protocol)) throw new Error('URL không dùng HTTP/HTTPS');
+      if (url.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(url.hostname.toLowerCase())) {
+        throw new Error('Website công khai phải dùng HTTPS');
+      }
       if (!raw.username && !raw.password) throw new Error('Thiếu username và password');
       records.push({ origin: url.origin, url: raw.url, username: raw.username, password: raw.password, notes: raw.extra, title: raw.name || url.hostname, grouping: raw.grouping, favorite: raw.fav === '1' });
     } catch (error) { errors.push({ row: index + 2, reason: error.message }); }

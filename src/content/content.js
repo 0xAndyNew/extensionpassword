@@ -1,270 +1,1179 @@
 (() => {
-  let activeDropdown = null;
-  const send = message => chrome.runtime.sendMessage(message).catch(() => null);
+  'use strict';
 
-  const getFields = () => [...document.querySelectorAll('input[type="password"]')];
-  const findUsernameField = (pwInput) => {
-    const form = pwInput.form || document;
-    const candidates = [...form.querySelectorAll('input[type="email"], input[autocomplete="username"], input[type="text"]')];
-    return candidates.filter(el => {
-      const style = window.getComputedStyle(el);
-      return style.display !== 'none' && style.visibility !== 'hidden' && !el.disabled && !el.readOnly;
-    }).at(-1);
+  const PAGE_ORIGIN = location.origin;
+  if (!['http:', 'https:'].includes(location.protocol)) return;
+  const loopbackHosts = new Set(['localhost', 'localhost.', '127.0.0.1', '[::1]', '::1']);
+  if (location.protocol === 'http:' && !loopbackHosts.has(location.hostname.toLowerCase())) return;
+
+  const SHADOW_STYLES = `
+    :host {
+      all: initial;
+      color-scheme: dark;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    .layer {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 2147483647;
+      font: 500 12px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #f8fafc;
+    }
+    button, input {
+      font: inherit;
+    }
+    .icon {
+      position: fixed;
+      z-index: 2;
+      width: 22px;
+      height: 22px;
+      margin: 0;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, 0.34);
+      border-radius: 6px;
+      background: linear-gradient(135deg, #0071e3, #00a8d9);
+      box-shadow: 0 2px 8px rgba(0, 54, 105, 0.35);
+      color: #fff;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      pointer-events: auto;
+    }
+    .icon:hover {
+      transform: scale(1.06);
+    }
+    .icon:focus-visible,
+    .menu button:focus-visible,
+    .banner button:focus-visible,
+    .banner input:focus-visible {
+      outline: 2px solid #7dd3fc;
+      outline-offset: 2px;
+    }
+    .menu {
+      position: fixed;
+      z-index: 3;
+      min-width: 220px;
+      max-width: min(360px, calc(100vw - 16px));
+      max-height: min(360px, calc(100vh - 16px));
+      overflow: auto;
+      padding: 8px;
+      border: 1px solid rgba(59, 130, 246, 0.34);
+      border-radius: 12px;
+      background: rgba(17, 24, 39, 0.97);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.52);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      pointer-events: auto;
+    }
+    .menu button {
+      width: 100%;
+      margin: 0;
+      padding: 9px 12px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      text-align: left;
+      white-space: normal;
+    }
+    .menu button:hover {
+      background: rgba(59, 130, 246, 0.16);
+      color: #7dd3fc;
+    }
+    .menu .message {
+      color: #cbd5e1;
+      cursor: default;
+      text-align: center;
+    }
+    .menu .message:hover {
+      background: transparent;
+      color: #cbd5e1;
+    }
+    .primary-line {
+      display: block;
+      color: #f8fafc;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .secondary-line {
+      display: block;
+      margin-top: 2px;
+      color: #94a3b8;
+      font-size: 10px;
+      font-weight: 500;
+      overflow-wrap: anywhere;
+    }
+    .banner {
+      position: fixed;
+      z-index: 4;
+      top: 20px;
+      right: 20px;
+      width: min(320px, calc(100vw - 32px));
+      padding: 16px;
+      border: 1px solid rgba(59, 130, 246, 0.34);
+      border-radius: 16px;
+      background: rgba(17, 24, 39, 0.97);
+      box-shadow: 0 20px 42px rgba(0, 0, 0, 0.58);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      pointer-events: auto;
+      animation: slide-in 180ms ease-out;
+    }
+    @keyframes slide-in {
+      from { transform: translateX(24px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .banner-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #3b82f6, #06b6d4);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .banner h2 {
+      margin: 0;
+      color: #f8fafc;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+    .banner p {
+      margin: 2px 0 0;
+      color: #94a3b8;
+      font-size: 10px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: #94a3b8;
+      font-size: 11px;
+    }
+    .field input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #334155;
+      border-radius: 7px;
+      outline: 0;
+      background: #0f172a;
+      color: #fff;
+    }
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .actions button {
+      padding: 7px 12px;
+      border: 0;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .cancel {
+      background: #334155;
+      color: #f8fafc;
+    }
+    .save {
+      background: #3b82f6;
+      color: #fff;
+    }
+    .actions button:disabled {
+      cursor: wait;
+      opacity: 0.65;
+    }
+    .error {
+      color: #fca5a5 !important;
+      font-size: 11px !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .banner { animation: none; }
+      .icon:hover { transform: none; }
+    }
+  `;
+
+  let accessAllowed = false;
+  let uiHost = null;
+  let uiLayer = null;
+  let activeMenu = null;
+  let activeMenuInput = null;
+  let activeBanner = null;
+  let activeBannerTimer = null;
+  let positionFrame = 0;
+  let wireFrame = 0;
+  let pendingSaveTimer = null;
+  let lastCaptureKey = '';
+  let lastCaptureTimer = null;
+  let contextValid = true;
+  let mutationObserver = null;
+  let qrSelectionHost = null;
+
+  const icons = new Map();
+  const wiredPasswordFields = new WeakSet();
+  const wiredForms = new WeakSet();
+
+  const samePageOrigin = () => location.origin === PAGE_ORIGIN;
+
+  const contextWasInvalidated = (error) => (
+    /extension context invalidated|receiving end does not exist/i.test(
+      String(error?.message || error || '')
+    )
+  );
+
+  function invalidateExtensionContext() {
+    if (!contextValid) return;
+    contextValid = false;
+    accessAllowed = false;
+    mutationObserver?.disconnect();
+    mutationObserver = null;
+    if (positionFrame) cancelAnimationFrame(positionFrame);
+    if (wireFrame) cancelAnimationFrame(wireFrame);
+    positionFrame = 0;
+    wireFrame = 0;
+    window.removeEventListener('resize', schedulePosition);
+    window.removeEventListener('scroll', schedulePosition, true);
+    window.removeEventListener('focus', handleWindowFocus);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+    try {
+      chrome.runtime?.onMessage?.removeListener(handleRuntimeMessage);
+    } catch {
+      // The old extension world is already detached.
+    }
+    stopQrSelection();
+    teardownUi();
+  }
+
+  const send = (message) => {
+    if (!contextValid || !samePageOrigin()) return Promise.resolve(null);
+    try {
+      const request = chrome.runtime.sendMessage({ ...message, origin: PAGE_ORIGIN });
+      return Promise.resolve(request).catch((error) => {
+        if (contextWasInvalidated(error)) invalidateExtensionContext();
+        return null;
+      });
+    } catch (error) {
+      // Accessing or invoking chrome.runtime can throw synchronously after an
+      // unpacked extension is reloaded. A trailing Promise.catch cannot see it.
+      invalidateExtensionContext();
+      return Promise.resolve(null);
+    }
   };
 
-  function setNativeValue(input, value) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    setter.call(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
+  function setImportantStyle(element, property, value) {
+    element.style.setProperty(property, value, 'important');
   }
 
-  // Inject a small icon inside the input field
-  function injectIcon(input) {
-    if (input.dataset.aegisWired) return;
-    input.dataset.aegisWired = '1';
+  function ensureUi() {
+    if (uiHost?.isConnected && uiLayer) return;
+    if (uiHost && !uiHost.isConnected) {
+      icons.clear();
+      activeMenu = null;
+      activeBanner = null;
+      uiHost = null;
+      uiLayer = null;
+    }
 
-    const icon = document.createElement('button');
-    icon.type = 'button';
-    icon.className = 'aegis-icon';
-    icon.textContent = 'A';
-    icon.title = 'Xem gợi ý tài khoản Aegis Vault';
+    const host = document.createElement('div');
+    setImportantStyle(host, 'all', 'initial');
+    setImportantStyle(host, 'position', 'fixed');
+    setImportantStyle(host, 'inset', '0');
+    setImportantStyle(host, 'width', '100vw');
+    setImportantStyle(host, 'height', '100vh');
+    setImportantStyle(host, 'margin', '0');
+    setImportantStyle(host, 'padding', '0');
+    setImportantStyle(host, 'border', '0');
+    setImportantStyle(host, 'overflow', 'visible');
+    setImportantStyle(host, 'pointer-events', 'none');
+    setImportantStyle(host, 'z-index', '2147483647');
 
-    // Ngăn chặn sự kiện submit của form khi click icon
-    icon.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      showSuggestions(input, icon);
-    });
+    const shadow = host.attachShadow({ mode: 'closed' });
+    const style = document.createElement('style');
+    style.textContent = SHADOW_STYLES;
+    const layer = document.createElement('div');
+    layer.className = 'layer';
+    shadow.append(style, layer);
 
-    // Chèn icon ngay sau input
-    input.after(icon);
+    (document.documentElement || document.body).appendChild(host);
+    uiHost = host;
+    uiLayer = layer;
+  }
 
-    // Định vị động icon để nó nằm ở góc trên bên phải, bên ngoài ô nhập
-    function positionIcon() {
-      const parent = input.parentElement;
-      if (parent && window.getComputedStyle(parent).position === 'static') {
-        parent.style.position = 'relative';
+  function closeMenu() {
+    activeMenu?.remove();
+    activeMenu = null;
+    activeMenuInput = null;
+  }
+
+  function closeBanner() {
+    activeBanner?.remove();
+    activeBanner = null;
+    if (activeBannerTimer) clearTimeout(activeBannerTimer);
+    activeBannerTimer = null;
+  }
+
+  function teardownUi() {
+    closeMenu();
+    closeBanner();
+    uiHost?.remove();
+    uiHost = null;
+    uiLayer = null;
+    icons.clear();
+    if (pendingSaveTimer) clearTimeout(pendingSaveTimer);
+    pendingSaveTimer = null;
+    if (lastCaptureTimer) clearTimeout(lastCaptureTimer);
+    lastCaptureTimer = null;
+    lastCaptureKey = '';
+  }
+
+  async function refreshAccess() {
+    if (!contextValid || !samePageOrigin()) {
+      accessAllowed = false;
+      teardownUi();
+      return false;
+    }
+    accessAllowed = true;
+    ensureUi();
+    scheduleWire();
+    return true;
+  }
+
+  function isVisible(element) {
+    if (!element?.isConnected || element.disabled || element.readOnly) return false;
+    const style = getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function getPasswordFields(root = document) {
+    return [...root.querySelectorAll('input[type="password"]')];
+  }
+
+  function autocompleteTokens(input) {
+    return String(input.autocomplete || '').toLowerCase().split(/\s+/).filter(Boolean);
+  }
+
+  function usernameDescriptor(input) {
+    const parts = [
+      input.name,
+      input.id,
+      input.placeholder,
+      input.getAttribute('aria-label'),
+      input.getAttribute('title'),
+      input.getAttribute('data-testid')
+    ];
+    if (input.labels) {
+      for (const label of input.labels) parts.push(label.textContent);
+    }
+    return parts.filter(Boolean).join(' ').toLowerCase();
+  }
+
+  function usernameCandidateScore(input, passwordInput) {
+    if (!(input instanceof HTMLInputElement) || input === passwordInput || !isVisible(input)) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    const type = String(input.type || 'text').toLowerCase();
+    if (!['text', 'email', 'search', 'tel', 'url', 'number'].includes(type)) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    const tokens = autocompleteTokens(input);
+    if (
+      tokens.includes('new-password')
+      || tokens.includes('current-password')
+      || tokens.includes('one-time-code')
+    ) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    const descriptor = usernameDescriptor(input);
+    const positive = /(?:user(?:name|id)?|login|e-?mail|account|identifier|tài\s*khoản|tên\s*đăng\s*nhập)/i;
+    const negative = /(?:search|filter|captcha|otp|token|verification|phone|mobile|password|passcode|coupon|promo)/i;
+    let score = 0;
+
+    if (tokens.includes('username')) score += 160;
+    if (tokens.includes('email')) score += 110;
+    if (positive.test(descriptor)) score += 90;
+    if (negative.test(descriptor)) score -= 180;
+    if (type === 'email') score += 35;
+    else if (type === 'text') score += 15;
+
+    if (passwordInput.form && input.form === passwordInput.form) score += 100;
+    else if (passwordInput.form && input.form && input.form !== passwordInput.form) score -= 80;
+
+    const relation = input.compareDocumentPosition(passwordInput);
+    if (relation & Node.DOCUMENT_POSITION_FOLLOWING) score += 30;
+    else if (relation & Node.DOCUMENT_POSITION_PRECEDING) score -= 20;
+
+    const rect = input.getBoundingClientRect();
+    const passwordRect = passwordInput.getBoundingClientRect();
+    const horizontalOverlap = Math.min(rect.right, passwordRect.right)
+      - Math.max(rect.left, passwordRect.left);
+    if (horizontalOverlap > 0) score += 35;
+    const verticalGap = passwordRect.top - rect.bottom;
+    if (verticalGap >= -4 && verticalGap <= 500) {
+      score += 65 - Math.min(45, verticalGap / 10);
+    } else {
+      score -= Math.min(80, Math.abs(verticalGap) / 8);
+    }
+
+    return score;
+  }
+
+  function findUsernameField(passwordInput) {
+    const candidates = [...document.querySelectorAll('input')]
+      .map(input => ({ input, score: usernameCandidateScore(input, passwordInput) }))
+      .filter(candidate => Number.isFinite(candidate.score))
+      .sort((a, b) => b.score - a.score);
+    return candidates[0]?.score > 0 ? candidates[0].input : null;
+  }
+
+  function setNativeValue(input, value) {
+    if (!(input instanceof HTMLInputElement) || !input.isConnected) return false;
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    if (!descriptor?.set) return false;
+    const nextValue = String(value ?? '');
+    try {
+      input.focus({ preventScroll: true });
+    } catch {
+      input.focus();
+    }
+    descriptor.set.call(input, nextValue);
+    try {
+      input.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        composed: true,
+        data: nextValue,
+        inputType: 'insertText'
+      }));
+    } catch {
+      input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    }
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return input.value === nextValue;
+  }
+
+  function positionUi() {
+    positionFrame = 0;
+    if (!accessAllowed || !uiLayer) return;
+
+    for (const [input, icon] of icons) {
+      if (!input.isConnected) {
+        icon.remove();
+        icons.delete(input);
+        continue;
       }
-      
-      // Đặt icon nằm ở góc trên bên phải phía bên ngoài của ô nhập (khớp với hình vẽ bôi đỏ)
-      const left = input.offsetLeft + input.offsetWidth + 6;
-      const top = input.offsetTop;
-      
+      if (!isVisible(input)) {
+        icon.hidden = true;
+        continue;
+      }
+      const rect = input.getBoundingClientRect();
+      if (
+        rect.bottom <= 0
+        || rect.top >= window.innerHeight
+        || rect.right <= 0
+        || rect.left >= window.innerWidth
+      ) {
+        icon.hidden = true;
+        continue;
+      }
+
+      const iconSize = 22;
+      const gap = 6;
+      const edge = 4;
+      const maxLeft = Math.max(edge, window.innerWidth - iconSize - edge);
+      const maxTop = Math.max(edge, window.innerHeight - iconSize - edge);
+      const centeredTop = Math.min(maxTop, Math.max(
+        edge,
+        rect.top + (rect.height - iconSize) / 2
+      ));
+      const spaceOnRight = window.innerWidth - rect.right;
+      const spaceOnLeft = rect.left;
+      let left;
+      let top = centeredTop;
+
+      if (spaceOnRight >= iconSize + gap + edge) {
+        left = rect.right + gap;
+      } else if (spaceOnLeft >= iconSize + gap + edge) {
+        left = rect.left - iconSize - gap;
+      } else {
+        left = Math.min(maxLeft, Math.max(edge, rect.right - iconSize));
+        const above = rect.top - iconSize - gap;
+        const below = rect.bottom + gap;
+        top = above >= edge
+          ? above
+          : Math.min(maxTop, Math.max(edge, below));
+      }
+
       icon.style.left = `${left}px`;
       icon.style.top = `${top}px`;
+      icon.hidden = false;
     }
 
-    // Định vị ban đầu và cập nhật liên tục khi focus/resize/hover
-    positionIcon();
-    input.addEventListener('focus', positionIcon);
-    input.addEventListener('mouseenter', positionIcon);
-    window.addEventListener('resize', positionIcon);
+    if (activeMenu && activeMenuInput) {
+      if (isVisible(activeMenuInput)) placeMenu(activeMenu, activeMenuInput);
+      else closeMenu();
+    }
   }
 
-  async function showSuggestions(input, icon) {
-    closeDropdown();
+  function schedulePosition() {
+    if (!contextValid || positionFrame) return;
+    positionFrame = requestAnimationFrame(positionUi);
+  }
 
-    const response = await send({ type: 'MATCH', origin: location.origin });
-    
-    activeDropdown = document.createElement('div');
-    activeDropdown.className = 'aegis-field-dropdown';
+  function appendTwoLineText(button, primary, secondary) {
+    const first = document.createElement('span');
+    first.className = 'primary-line';
+    first.textContent = primary;
+    const second = document.createElement('span');
+    second.className = 'secondary-line';
+    second.textContent = secondary;
+    button.append(first, second);
+  }
+
+  function makeMenuButton(primary, secondary, onTrustedClick, className = '') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    appendTwoLineText(button, primary, secondary);
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      if (!event.isTrusted) return;
+      void onTrustedClick();
+    });
+    return button;
+  }
+
+  function placeMenu(menu, input) {
+    const rect = input.getBoundingClientRect();
+    const width = Math.max(220, Math.min(360, rect.width));
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const estimatedHeight = Math.min(360, 72 + menu.childElementCount * 46);
+    const below = rect.bottom + 6;
+    const top = below + estimatedHeight <= window.innerHeight
+      ? below
+      : Math.max(8, rect.top - estimatedHeight - 6);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+    menu.style.width = `${width}px`;
+  }
+
+  async function showSuggestions(input) {
+    closeMenu();
+    if (!input.isConnected || !(await refreshAccess())) return;
+
+    const response = await send({ type: 'MATCH' });
+    if (!samePageOrigin() || !accessAllowed || !uiLayer) return;
+
+    const menu = document.createElement('div');
+    menu.className = 'menu';
+    menu.setAttribute('role', 'menu');
 
     if (!response?.ok) {
-      // Trường hợp vault đang khóa hoặc chưa đăng nhập
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.style.textAlign = 'center';
-      button.style.color = '#f8fafc';
-      button.style.fontWeight = 'bold';
-      button.innerHTML = `🔑 Aegis Vault đang khóa<br><span style="font-size:10px; font-weight:normal; color:#94a3b8;">Nhấp để mở khóa / Đăng nhập</span>`;
-      button.onclick = (e) => {
-        e.stopPropagation();
-        send({ type: 'OPEN_OPTIONS' });
-        closeDropdown();
-      };
-      activeDropdown.append(button);
-    } else if (!response.credentials || !response.credentials.length) {
-      // Trường hợp vault trống hoặc chưa lưu tài khoản cho web này
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.style.textAlign = 'center';
-      button.style.color = '#f8fafc';
-      button.style.fontWeight = 'bold';
-      button.innerHTML = `➕ Chưa có tài khoản cho trang này<br><span style="font-size:10px; font-weight:normal; color:#94a3b8;">Nhấp để thêm tài khoản thủ công</span>`;
-      button.onclick = (e) => {
-        e.stopPropagation();
-        send({ type: 'OPEN_OPTIONS' });
-        closeDropdown();
-      };
-      activeDropdown.append(button);
+      const message = makeMenuButton(
+        'Aegis Vault chưa sẵn sàng',
+        'Mở tiện ích để đăng nhập hoặc mở khóa.',
+        async () => {
+          await send({ type: 'OPEN_OPTIONS' });
+          closeMenu();
+        }
+      );
+      menu.append(message);
+    } else if (!Array.isArray(response.credentials) || response.credentials.length === 0) {
+      menu.append(makeMenuButton(
+        'Chưa có tài khoản cho trang này',
+        'Mở Aegis Vault để thêm tài khoản.',
+        async () => {
+          await send({ type: 'OPEN_OPTIONS' });
+          closeMenu();
+        }
+      ));
     } else {
-      // Có danh sách gợi ý tài khoản
-      response.credentials.forEach(item => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = `${item.username} · ${item.title}`;
-        button.onclick = async (e) => {
-          e.stopPropagation();
-          const result = await send({ type: 'FILL', id: item.id, origin: location.origin });
-          if (result?.ok) {
-            const usernameInput = findUsernameField(input);
-            if (usernameInput) setNativeValue(usernameInput, result.credential.username);
-            setNativeValue(input, result.credential.password);
-            closeDropdown();
+      for (const item of response.credentials) {
+        if (!item || typeof item.id !== 'string') continue;
+        const username = typeof item.username === 'string' && item.username
+          ? item.username
+          : 'Tài khoản không có tên';
+        const title = typeof item.title === 'string' && item.title
+          ? item.title
+          : new URL(PAGE_ORIGIN).hostname;
+        const button = makeMenuButton(username, title, async () => {
+          if (!(await refreshAccess()) || !input.isConnected) return;
+          const result = await send({ type: 'FILL', id: item.id });
+          if (!result?.ok || !samePageOrigin() || !accessAllowed) return;
+          const credential = result.credential;
+          if (!credential || typeof credential.password !== 'string') return;
+          const usernameInput = findUsernameField(input);
+          if (usernameInput && typeof credential.username === 'string') {
+            setNativeValue(usernameInput, credential.username);
           }
-        };
-        activeDropdown.append(button);
-      });
+          setNativeValue(input, credential.password);
+          closeMenu();
+        });
+        button.setAttribute('role', 'menuitem');
+        menu.append(button);
+      }
     }
 
-    // Định vị dropdown ở dưới icon hoặc input
-    document.body.appendChild(activeDropdown);
-    const rect = input.getBoundingClientRect();
-    
-    // Tính toán tọa độ tuyệt đối trong trang (body coordinate)
-    const top = rect.bottom + window.scrollY + 6;
-    const left = rect.left + window.scrollX;
-    
-    Object.assign(activeDropdown.style, {
-      top: `${top}px`,
-      left: `${left}px`,
-      minWidth: `${Math.max(220, rect.width)}px`
+    uiLayer.appendChild(menu);
+    activeMenu = menu;
+    activeMenuInput = input;
+    placeMenu(menu, input);
+  }
+
+  function injectIcon(input) {
+    if (icons.has(input) || !uiLayer) return;
+    const icon = document.createElement('button');
+    icon.type = 'button';
+    icon.className = 'icon';
+    icon.textContent = 'A';
+    icon.title = 'Tài khoản từ Aegis Vault';
+    icon.setAttribute('aria-label', 'Xem tài khoản từ Aegis Vault');
+    icon.addEventListener('click', (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      if (!event.isTrusted || !accessAllowed || !samePageOrigin()) return;
+      void showSuggestions(input);
     });
+    uiLayer.appendChild(icon);
+    icons.set(input, icon);
   }
 
-  function closeDropdown() {
-    activeDropdown?.remove();
-    activeDropdown = null;
+  function getLoginCandidate(passwordInput) {
+    const root = passwordInput.form || document;
+    const allPasswords = getPasswordFields(root);
+    const visiblePasswords = allPasswords.filter(isVisible);
+
+    // Multiple password fields and `new-password` are typical change-password
+    // or registration forms. Do not offer to save them as a login credential.
+    if (visiblePasswords.length !== 1 || visiblePasswords[0] !== passwordInput) return null;
+    if (allPasswords.some((input) => autocompleteTokens(input).includes('new-password'))) return null;
+
+    const usernameInput = findUsernameField(passwordInput);
+    const username = usernameInput?.value.trim() || '';
+    const password = passwordInput.value;
+    if (!username || !password) return null;
+    return { username, password };
   }
 
-  // Chức năng custom save banner
-  function showSaveBanner(username, password) {
-    // Xóa banner cũ nếu có
-    document.getElementById('aegisSaveBanner')?.remove();
+  async function showSaveBanner(username, password) {
+    if (!(await refreshAccess()) || !uiLayer) return;
+    closeBanner();
 
-    const banner = document.createElement('div');
-    banner.id = 'aegisSaveBanner';
-    banner.className = 'aegis-save-banner';
+    const banner = document.createElement('section');
+    banner.className = 'banner';
+    banner.setAttribute('role', 'dialog');
+    banner.setAttribute('aria-label', 'Lưu tài khoản vào Aegis Vault');
 
-    banner.innerHTML = `
-      <div class="aegis-banner-header">
-        <div class="aegis-banner-logo">A</div>
-        <div>
-          <h4>Lưu tài khoản?</h4>
-          <p>Lưu tài khoản này vào Aegis Vault?</p>
-        </div>
-      </div>
-      <div class="aegis-banner-field">
-        <label>Tên đăng nhập</label>
-        <input type="text" id="aegisSaveUser" value="${username}">
-      </div>
-      <div class="aegis-banner-actions">
-        <button class="btn-cancel" id="aegisSaveCancel">Bỏ qua</button>
-        <button class="btn-save" id="aegisSaveConfirm">Lưu tài khoản</button>
-      </div>
-    `;
+    const header = document.createElement('div');
+    header.className = 'banner-header';
+    const logo = document.createElement('div');
+    logo.className = 'logo';
+    logo.textContent = 'A';
+    const headingGroup = document.createElement('div');
+    const heading = document.createElement('h2');
+    heading.textContent = 'Lưu tài khoản?';
+    const description = document.createElement('p');
+    description.textContent = 'Lưu thông tin đăng nhập này vào Aegis Vault?';
+    headingGroup.append(heading, description);
+    header.append(logo, headingGroup);
 
-    document.body.appendChild(banner);
+    const field = document.createElement('label');
+    field.className = 'field';
+    const labelText = document.createElement('span');
+    labelText.textContent = 'Tên đăng nhập';
+    const usernameInput = document.createElement('input');
+    usernameInput.type = 'text';
+    usernameInput.autocomplete = 'off';
+    usernameInput.spellcheck = false;
+    usernameInput.value = username;
+    field.append(labelText, usernameInput);
 
-    document.getElementById('aegisSaveCancel').onclick = () => {
-      banner.remove();
-    };
+    const error = document.createElement('p');
+    error.className = 'error';
+    error.hidden = true;
 
-    document.getElementById('aegisSaveConfirm').onclick = async () => {
-      const finalUser = document.getElementById('aegisSaveUser').value.trim();
-      if (finalUser) {
-        await send({ type: 'SAVE', origin: location.origin, username: finalUser, password });
-      }
-      banner.remove();
-    };
-  }
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'cancel';
+    cancel.textContent = 'Bỏ qua';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'save';
+    save.textContent = 'Lưu tài khoản';
+    actions.append(cancel, save);
+    banner.append(header, field, error, actions);
 
-  let lastCapturedCreds = null;
-  let saveBannerTimeout = null;
+    cancel.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (!event.isTrusted) return;
+      closeBanner();
+    });
 
-  function captureAndTrigger(input) {
-    const usernameEl = findUsernameField(input);
-    const username = usernameEl?.value.trim() || '';
-    const password = input.value;
-    
-    if (username && password) {
-      if (lastCapturedCreds && lastCapturedCreds.username === username && lastCapturedCreds.password === password) {
-        return;
-      }
-      lastCapturedCreds = { username, password };
-      
-      clearTimeout(saveBannerTimeout);
-      saveBannerTimeout = setTimeout(async () => {
-        // Kiểm tra xem tài khoản này (cả username và password) đã tồn tại trong vault chưa
-        const check = await send({ type: 'CHECK_EXISTS', origin: location.origin, username, password });
-        if (check?.ok && check.exists) {
-          // Trùng khớp hoàn toàn -> Bỏ qua không hiện banner hỏi lưu nữa
+    save.addEventListener('click', (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      if (!event.isTrusted || save.disabled) return;
+      void (async () => {
+        const finalUsername = usernameInput.value.trim();
+        if (!finalUsername || !(await refreshAccess())) return;
+        save.disabled = true;
+        const result = await send({
+          type: 'SAVE',
+          username: finalUsername,
+          password
+        });
+        if (result?.ok) {
+          closeBanner();
           return;
         }
-        showSaveBanner(username, password);
-      }, 800);
-    }
+        error.textContent = result?.error || 'Không thể lưu tài khoản.';
+        error.hidden = false;
+        save.disabled = false;
+      })();
+    });
+
+    uiLayer.appendChild(banner);
+    activeBanner = banner;
+    activeBannerTimer = setTimeout(closeBanner, 30000);
+  }
+
+  function queueSaveCapture(passwordInput) {
+    if (!contextValid || !accessAllowed || !samePageOrigin()) return;
+    const candidate = getLoginCandidate(passwordInput);
+    if (!candidate) return;
+
+    const captureKey = `${candidate.username}\u0000${candidate.password}`;
+    if (captureKey === lastCaptureKey) return;
+    lastCaptureKey = captureKey;
+    if (lastCaptureTimer) clearTimeout(lastCaptureTimer);
+    lastCaptureTimer = setTimeout(() => {
+      lastCaptureKey = '';
+      lastCaptureTimer = null;
+    }, 15000);
+
+    if (pendingSaveTimer) clearTimeout(pendingSaveTimer);
+    pendingSaveTimer = setTimeout(async () => {
+      pendingSaveTimer = null;
+      if (!(await refreshAccess())) return;
+      const check = await send({
+        type: 'CHECK_EXISTS',
+        username: candidate.username,
+        password: candidate.password
+      });
+      if (!check?.ok || check.exists || !(await refreshAccess())) return;
+      await showSaveBanner(candidate.username, candidate.password);
+    }, 650);
+  }
+
+  function isSubmitControl(element, form) {
+    if (!(element instanceof Element)) return false;
+    const control = element.closest('button, input[type="submit"], input[type="image"]');
+    if (!control || control.form !== form || control.disabled) return false;
+    if (control instanceof HTMLButtonElement) return control.type === 'submit';
+    return control instanceof HTMLInputElement
+      && ['submit', 'image'].includes(control.type.toLowerCase());
+  }
+
+  function wirePasswordField(input) {
+    injectIcon(input);
+    if (wiredPasswordFields.has(input)) return;
+    wiredPasswordFields.add(input);
+    input.addEventListener('keydown', (event) => {
+      if (!event.isTrusted || event.isComposing || event.key !== 'Enter') return;
+      queueSaveCapture(input);
+    }, { capture: true });
+  }
+
+  function wireForm(form) {
+    if (wiredForms.has(form)) return;
+    wiredForms.add(form);
+
+    form.addEventListener('click', (event) => {
+      if (!event.isTrusted || !isSubmitControl(event.target, form)) return;
+      const passwordFields = getPasswordFields(form).filter(isVisible);
+      if (passwordFields.length === 1) queueSaveCapture(passwordFields[0]);
+    }, { capture: true });
+
+    form.addEventListener('submit', (event) => {
+      if (!event.isTrusted) return;
+      const passwordFields = getPasswordFields(form).filter(isVisible);
+      if (passwordFields.length === 1) queueSaveCapture(passwordFields[0]);
+    }, { capture: true });
   }
 
   function wire() {
-    getFields().forEach(input => {
-      injectIcon(input);
-      
-      // 1. Phím Enter trong ô password
-      if (!input.dataset.aegisEnterWired) {
-        input.dataset.aegisEnterWired = '1';
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            captureAndTrigger(input);
-          }
-        });
-      }
-      
-      // 2. Form Submit event
-      const form = input.form;
-      if (form && !form.dataset.aegisSubmitWired) {
-        form.dataset.aegisSubmitWired = '1';
-        form.addEventListener('submit', () => {
-          captureAndTrigger(input);
-        }, { capture: true });
-      }
+    wireFrame = 0;
+    if (!contextValid || !accessAllowed || !samePageOrigin()) return;
+    ensureUi();
 
-      // 3. Click chuột vào các nút bấm trong form/trang
-      const container = form || document.body;
-      if (container && !container.dataset.aegisClickWired) {
-        container.dataset.aegisClickWired = '1';
-        container.addEventListener('click', (e) => {
-          const target = e.target.closest('button, input[type="submit"], input[type="button"], [role="button"]');
-          if (target) {
-            captureAndTrigger(input);
-          }
-        }, { capture: true });
+    const fields = getPasswordFields();
+    for (const input of fields) {
+      wirePasswordField(input);
+      if (input.form) wireForm(input.form);
+    }
+
+    for (const [input, icon] of icons) {
+      if (!input.isConnected || !fields.includes(input)) {
+        icon.remove();
+        icons.delete(input);
       }
+    }
+    schedulePosition();
+  }
+
+  function scheduleWire() {
+    if (!contextValid || wireFrame || !accessAllowed) return;
+    wireFrame = requestAnimationFrame(wire);
+  }
+
+  function stopQrSelection() {
+    if (!qrSelectionHost) return;
+    try {
+      qrSelectionHost.aegisCleanup?.();
+    } catch {
+      // The page may be navigating while the selector is being removed.
+    }
+    qrSelectionHost.remove();
+    qrSelectionHost = null;
+  }
+
+  function loadQrScreenshot(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Không đọc được ảnh chụp màn hình.'));
+      image.src = dataUrl;
     });
   }
 
-  // Lắng nghe thông báo từ popup (khi chọn tài khoản từ popup)
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === 'AEGIS_AUTOFILL') {
-      const fields = getFields();
-      if (fields.length) {
-        const pwInput = fields[0];
-        const usernameInput = findUsernameField(pwInput);
-        if (usernameInput) setNativeValue(usernameInput, message.username);
-        setNativeValue(pwInput, message.password);
+  async function cropQrScreenshot(dataUrl, rect) {
+    const image = await loadQrScreenshot(dataUrl);
+    const scaleX = image.naturalWidth / window.innerWidth;
+    const scaleY = image.naturalHeight / window.innerHeight;
+    const sourceX = Math.max(0, Math.floor(rect.x * scaleX));
+    const sourceY = Math.max(0, Math.floor(rect.y * scaleY));
+    const sourceWidth = Math.min(
+      image.naturalWidth - sourceX,
+      Math.max(1, Math.ceil(rect.width * scaleX))
+    );
+    const sourceHeight = Math.min(
+      image.naturalHeight - sourceY,
+      Math.max(1, Math.ceil(rect.height * scaleY))
+    );
+    if (sourceWidth < 12 || sourceHeight < 12) {
+      throw new Error('Vùng chọn QR quá nhỏ.');
+    }
+
+    const outputScale = Math.min(1, 2000 / Math.max(sourceWidth, sourceHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(sourceWidth * outputScale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * outputScale));
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(
+      image,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+    return canvas.toDataURL('image/png');
+  }
+
+  function beginQrSelection() {
+    stopQrSelection();
+    if (!contextValid || !samePageOrigin()) return false;
+
+    const host = document.createElement('div');
+    setImportantStyle(host, 'all', 'initial');
+    setImportantStyle(host, 'display', 'block');
+    setImportantStyle(host, 'position', 'fixed');
+    setImportantStyle(host, 'inset', '0');
+    setImportantStyle(host, 'width', '100vw');
+    setImportantStyle(host, 'height', '100vh');
+    setImportantStyle(host, 'margin', '0');
+    setImportantStyle(host, 'padding', '0');
+    setImportantStyle(host, 'z-index', '2147483647');
+    setImportantStyle(host, 'pointer-events', 'auto');
+
+    const shadow = host.attachShadow({ mode: 'closed' });
+    const style = document.createElement('style');
+    style.textContent = `
+      :host { all: initial; }
+      * { box-sizing: border-box; }
+      .selector {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        overflow: hidden;
+        cursor: crosshair;
+        background: rgba(8, 15, 28, .58);
+        user-select: none;
+        touch-action: none;
+        font: 600 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
+      .selector.selecting { background: transparent; }
+      .selection {
+        position: fixed;
+        display: none;
+        border: 2px solid #38bdf8;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, .02);
+        box-shadow: 0 0 0 9999px rgba(8, 15, 28, .62), 0 0 0 1px rgba(255,255,255,.7);
+        pointer-events: none;
+      }
+      .hint {
+        position: fixed;
+        left: 50%;
+        top: 18px;
+        max-width: min(620px, calc(100vw - 120px));
+        transform: translateX(-50%);
+        padding: 11px 16px;
+        border: 1px solid rgba(125, 211, 252, .55);
+        border-radius: 10px;
+        background: rgba(12, 24, 43, .94);
+        box-shadow: 0 10px 32px rgba(0,0,0,.35);
+        color: #f8fafc;
+        text-align: center;
+        pointer-events: none;
+      }
+      .hint.error { border-color: rgba(252, 165, 165, .7); color: #fecaca; }
+      .cancel {
+        position: fixed;
+        right: 18px;
+        top: 18px;
+        min-width: 72px;
+        height: 38px;
+        border: 1px solid rgba(255,255,255,.34);
+        border-radius: 9px;
+        background: rgba(12, 24, 43, .94);
+        color: #fff;
+        cursor: pointer;
+        font: 700 12px/1 system-ui, sans-serif;
+      }
+      .cancel:hover { background: #b42318; }
+    `;
+    const layer = document.createElement('div');
+    layer.className = 'selector';
+    const hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = 'Kéo chuột khoanh đúng 1 mã QR · Nhấn Esc để hủy';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'cancel';
+    cancel.textContent = 'Hủy';
+    const selection = document.createElement('div');
+    selection.className = 'selection';
+    layer.append(hint, cancel, selection);
+    shadow.append(style, layer);
+
+    let startX = 0;
+    let startY = 0;
+    let selecting = false;
+    let processing = false;
+
+    const updateSelection = (clientX, clientY) => {
+      const x = Math.max(0, Math.min(startX, clientX));
+      const y = Math.max(0, Math.min(startY, clientY));
+      const width = Math.min(window.innerWidth, Math.max(startX, clientX)) - x;
+      const height = Math.min(window.innerHeight, Math.max(startY, clientY)) - y;
+      selection.style.left = `${x}px`;
+      selection.style.top = `${y}px`;
+      selection.style.width = `${width}px`;
+      selection.style.height = `${height}px`;
+      return { x, y, width, height };
+    };
+
+    const resetForRetry = message => {
+      processing = false;
+      selecting = false;
+      layer.classList.remove('selecting');
+      layer.style.cursor = 'crosshair';
+      selection.style.display = 'none';
+      selection.style.borderColor = '';
+      selection.style.background = '';
+      hint.style.display = '';
+      cancel.style.display = '';
+      hint.classList.add('error');
+      hint.textContent = message;
+    };
+
+    const keyHandler = event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      stopQrSelection();
+    };
+    window.addEventListener('keydown', keyHandler, true);
+    host.aegisCleanup = () => window.removeEventListener('keydown', keyHandler, true);
+
+    cancel.onclick = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      stopQrSelection();
+    };
+    layer.onwheel = event => event.preventDefault();
+    layer.onpointerdown = event => {
+      if (processing || event.button !== 0 || event.target === cancel) return;
+      event.preventDefault();
+      selecting = true;
+      startX = event.clientX;
+      startY = event.clientY;
+      hint.classList.remove('error');
+      hint.textContent = 'Thả chuột khi khung chỉ chứa mã QR cần lấy';
+      layer.classList.add('selecting');
+      selection.style.display = 'block';
+      layer.setPointerCapture(event.pointerId);
+      updateSelection(event.clientX, event.clientY);
+    };
+    layer.onpointermove = event => {
+      if (!selecting || processing) return;
+      event.preventDefault();
+      updateSelection(event.clientX, event.clientY);
+    };
+    layer.onpointerup = async event => {
+      if (!selecting || processing) return;
+      event.preventDefault();
+      selecting = false;
+      try {
+        layer.releasePointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture can already be released when the tab loses focus.
+      }
+      const rect = updateSelection(event.clientX, event.clientY);
+      if (rect.width < 24 || rect.height < 24) {
+        resetForRetry('Vùng chọn quá nhỏ. Hãy kéo khoanh trọn mã QR.');
+        return;
+      }
+
+      processing = true;
+      layer.style.cursor = 'wait';
+      hint.classList.remove('error');
+      hint.textContent = 'Đang đọc mã QR trong vùng đã chọn…';
+      hint.style.display = 'none';
+      cancel.style.display = 'none';
+      selection.style.borderColor = 'transparent';
+      selection.style.background = 'transparent';
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const capture = await send({ type: 'CAPTURE_QR_SELECTION' });
+      if (!capture?.ok || !capture.screenshot) {
+        resetForRetry(capture?.error || 'Không chụp được vùng QR. Hãy thử lại.');
+        return;
+      }
+
+      try {
+        const dataUrl = await cropQrScreenshot(capture.screenshot, rect);
+        hint.style.display = 'block';
+        hint.textContent = 'Đang lưu mã OTP vào Aegis Vault…';
+        const saved = await send({ type: 'SAVE_QR_CAPTURE', dataUrl });
+        if (!saved?.ok) {
+          resetForRetry(saved?.error || 'Không lưu được mã OTP.');
+          return;
+        }
+        stopQrSelection();
+      } catch (error) {
+        resetForRetry(error?.message || 'Không xử lý được vùng QR đã chọn.');
+      }
+    };
+
+    (document.documentElement || document.body).appendChild(host);
+    qrSelectionHost = host;
+    return true;
+  }
+
+  function handleRuntimeMessage(message, sender, sendResponse) {
+    if (!contextValid) return;
+    let runtimeId;
+    try {
+      runtimeId = chrome.runtime.id;
+    } catch {
+      invalidateExtensionContext();
+      return;
     }
+    if (sender.id !== runtimeId || message.origin !== PAGE_ORIGIN) return;
+
+    if (message?.type !== 'AEGIS_AUTOFILL') return;
+    if (typeof message.username !== 'string' || typeof message.password !== 'string') return;
+
+    void (async () => {
+      if (!(await refreshAccess()) || !samePageOrigin()) return;
+      const fields = getPasswordFields().filter((input) => (
+        isVisible(input) && !autocompleteTokens(input).includes('new-password')
+      ));
+      if (!fields.length) return;
+      const passwordInput = fields.find((input) => autocompleteTokens(input).includes('current-password'))
+        || fields[0];
+      const usernameInput = findUsernameField(passwordInput);
+      if (usernameInput) setNativeValue(usernameInput, message.username);
+      setNativeValue(passwordInput, message.password);
+    })();
+  }
+
+  function handleWindowFocus() {
+    if (contextValid) void refreshAccess();
+  }
+
+  function handleVisibilityChange() {
+    if (contextValid && !document.hidden) void refreshAccess();
+  }
+
+  function handleDocumentPointerDown(event) {
+    if (!contextValid || !event.isTrusted || !activeMenu || event.target === uiHost) return;
+    closeMenu();
+  }
+
+  try {
+    chrome.runtime.onMessage.addListener(handleRuntimeMessage);
+  } catch {
+    invalidateExtensionContext();
+    return;
+  }
+
+  mutationObserver = new MutationObserver(() => scheduleWire());
+  mutationObserver.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['type', 'style', 'class', 'disabled', 'readonly']
   });
 
-  // Tự động quét và liên kết
-  wire();
-  new MutationObserver(() => wire()).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('resize', schedulePosition, { passive: true });
+  window.addEventListener('scroll', schedulePosition, { capture: true, passive: true });
+  window.addEventListener('focus', handleWindowFocus);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  document.addEventListener('pointerdown', handleDocumentPointerDown, { capture: true });
 
-  // Nhấp chuột bên ngoài để đóng dropdown
-  document.addEventListener('mousedown', (e) => {
-    if (activeDropdown && !activeDropdown.contains(e.target) && !e.target.classList.contains('aegis-icon')) {
-      closeDropdown();
-    }
-  });
+  void refreshAccess();
 })();

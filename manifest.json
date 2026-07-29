@@ -1,63 +1,70 @@
 {
-    "manifest_version":  3,
-    "name":  "Aegis Vault",
-    "version":  "0.1.0",
-    "description":  "Kho mật khẩu cục bộ được mã hóa, hỗ trợ lưu và gợi ý tài khoản an toàn.",
-    "permissions":  [
-                        "storage",
-                        "activeTab",
-                        "identity"
-                    ],
-    "host_permissions":  [
-                             "http://*/*",
-                             "https://*/*"
-                         ],
-    "background":  {
-                       "service_worker":  "src/background.js",
-                       "type":  "module"
-                   },
-    "icons": {
-        "16": "src/ui/logo-16.png",
-        "32": "src/ui/logo-32.png",
-        "48": "src/ui/logo-48.png",
-        "128": "src/ui/logo-128.png"
-    },
-    "action": {
-        "default_title": "Aegis Vault",
-        "default_popup": "src/ui/popup.html",
-        "default_icon": {
-            "16": "src/ui/logo-16.png",
-            "32": "src/ui/logo-32.png",
-            "48": "src/ui/logo-48.png",
-            "128": "src/ui/logo-128.png"
-        }
-    },
-    "options_page":  "src/ui/options.html",
-    "content_scripts":  [
-                            {
-                                "matches":  [
-                                                "http://*/*",
-                                                "https://*/*"
-                                            ],
-                                "js":  [
-                                           "src/content/content.js"
-                                       ],
-                                "css":  [
-                                            "src/content/content.css"
-                                        ],
-                                "run_at":  "document_idle"
-                            }
-                        ],
-    "content_security_policy":  {
-                                    "extension_pages":  "script-src \u0027self\u0027; object-src \u0027self\u0027"
-                                },
-    "oauth2":  {
-                    "client_id": "187212798388-1vo287n30lkci4tro335dvq6scu9qvbu.apps.googleusercontent.com",
-                   "scopes":  [
-                                  "openid",
-                                  "email",
-                                  "profile",
-                                  "https://www.googleapis.com/auth/drive.appdata"
-                              ]
-               }
+  "manifest_version": 3,
+  "name": "Aegis Vault",
+  "version": "0.3.17",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkF8xOHc7g5P0ppSizXv9/X65HA/+3iOgMOrZYOy4/P+ZVDztlCFZDYYzBQHOPk8wTUCsjbgXilA9xDp/Q4AxKGmfej2799t4oIRafrDupysu1GVFx/sr1ylbNmoAoe2AcmAB8i0gmtRNuL5dMGX7kVUYvl+85sYlhxrIvB7nf6KxW3pR9hbvhiWQS8GqTPQH5wNswGX/6+qW4krG+DXGXBGqUSDyjJrexkBlprXaXBRArHxFIYUaC6saD7tzhnSeatN1SECqwOYvtW7q4RXkbI3blDSQl2myA8EsIKp8qzMk6S/7LadaAjgPa6AR2sf3gSFE4+gUfyord72LZDsjUQIDAQAB",
+  "minimum_chrome_version": "106",
+  "description": "Kho mật khẩu local-first được mã hóa, hỗ trợ Firebase, OTP và autofill an toàn.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "activeTab",
+    "scripting",
+    "alarms",
+    "identity",
+    "favicon"
+  ],
+  "host_permissions": [
+    "https://openidconnect.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "https://oauth2.googleapis.com/*",
+    "https://identitytoolkit.googleapis.com/*",
+    "https://securetoken.googleapis.com/*",
+    "https://firestore.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "icons": {
+    "16": "src/ui/logo-16.png",
+    "32": "src/ui/logo-32.png",
+    "48": "src/ui/logo-48.png",
+    "128": "src/ui/logo-128.png"
+  },
+  "action": {
+    "default_title": "Aegis Vault",
+    "default_popup": "src/ui/popup.html",
+    "default_icon": {
+      "16": "src/ui/logo-16.png",
+      "32": "src/ui/logo-32.png",
+      "48": "src/ui/logo-48.png",
+      "128": "src/ui/logo-128.png"
+    }
+  },
+  "options_page": "src/ui/options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "src/content/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "oauth2": {
+    "client_id": "846050632481-abofreaom5d07e6fdi0tevorb554j01e.apps.googleusercontent.com",
+    "scopes": [
+      "openid",
+      "email",
+      "profile"
+    ]
+  }
 }

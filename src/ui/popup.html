@@ -17,7 +17,7 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
 .header-title-box { display: flex; flex-direction: column; }
 .header-title-box h1 { margin: 0; font-size: 13.5px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
 .header-title-box p { margin: 1px 0 0; font-size: 10px; color: var(--muted); }
-.header-actions { display: flex; gap: 6px; align-items: center; }
+.header-actions { position:relative; display: flex; gap: 6px; align-items: center; }
 .header-actions button { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; padding: 6px; border-radius: 6px; display: grid; place-items: center; transition: 0.15s; }
 .header-actions button:hover { background: rgba(0, 0, 0, 0.05); color: var(--text); }
 .search-bar { display: flex; align-items: center; background: #e8e8ed; border-radius: 8px; padding: 8px 12px; margin: 8px 12px; gap: 8px; border: 1px solid transparent; transition: background 0.15s, border-color 0.15s, box-shadow 0.15s; }
@@ -38,8 +38,8 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
 .scroll-area::-webkit-scrollbar-thumb:hover { background:#737373; }
 .list-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background 0.15s; background: var(--panel); }
 .list-item:hover { background: #f5f5f7; }
-.list-icon { width: 32px; height: 32px; border-radius: 7px; background: rgba(52, 199, 89, 0.1); display: grid; place-items: center; font-size: 14px; font-weight: bold; color: #34c759; overflow: hidden; }
-.list-icon img { width: 100%; height: 100%; object-fit: cover; }
+.list-icon { width: 32px; height: 32px; border-radius: 9px; background: transparent; display: grid; place-items: center; font-size: 14px; font-weight: bold; color: #34c759; overflow: hidden; }
+.list-icon img, .list-icon .aegis-site-fallback { width: 100%; height: 100%; object-fit: cover; display: block; }
 .list-info { flex: 1; min-width: 0; }
 .list-info h4 { margin: 0 0 2px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .list-info p { margin: 0; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -53,25 +53,29 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
 .identity-field:last-child { border-bottom: 0; }
 .identity-field span:first-child { color: var(--muted); }
 .identity-field span:last-child { color: var(--text); font-weight: 500; }
-.floating-actions { position: absolute; bottom: 16px; right: 16px; display: flex; flex-direction: column; gap: 10px; z-index: 10; }
-.float-btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: white; cursor: pointer; border: 0; font-size: 18px; transition: transform 0.15s; }
-.float-btn:hover { transform: scale(1.05); }
-.float-btn.save { background: #34c759; box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3); }
-.float-btn.add { background: var(--accent); box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3); }
 .footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--line); font-size: 10.5px; color: var(--muted); }
 .footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
 
 /* Custom auth panels */
 .auth-panel { margin: 20px; padding: 20px; background: var(--panel); border-radius: 16px; border: 1px solid var(--line); box-shadow: 0 4px 20px rgba(0,0,0,0.03); }
 .auth-panel label { display: block; font-size: 11.5px; font-weight: 600; margin-bottom: 6px; color: var(--muted); }
-.auth-panel input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: #f5f5f7; color: var(--text); margin-bottom: 12px; outline: none; font-size: 13px; font-family: var(--font-family); transition: border-color 0.15s, background 0.15s; }
+.auth-panel input { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: #f5f5f7; color: var(--text); margin-bottom: 12px; outline: none; font-size: 13px; font-family: var(--font-family); transition: border-color 0.15s, background 0.15s; }
 .auth-panel input:focus { border-color: var(--accent); background: #ffffff; box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1); }
-.auth-panel button { width: 100%; padding: 11px; border-radius: 8px; background: var(--accent); color: white; font-weight: 700; border: 0; cursor: pointer; font-size: 13px; transition: background 0.15s; }
-.auth-panel button:hover { background: #0077ed; }
+.auth-panel button.primary { width: 100%; padding: 11px; border-radius: 8px; background: var(--accent); color: white; font-weight: 700; border: 0; cursor: pointer; font-size: 13px; transition: background 0.15s; }
+.auth-panel button.primary:hover { background: #0077ed; }
+.pwd-input-wrap { position: relative; width: 100%; margin-bottom: 12px; }
+.pwd-input-wrap input { margin-bottom: 0 !important; padding-right: 36px !important; }
+.pwd-input-wrap .toggle-pwd-btn { position: absolute !important; right: 6px !important; top: 50% !important; transform: translateY(-50%) !important; width: 28px !important; height: 28px !important; padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--muted) !important; font-size: 14px !important; cursor: pointer !important; display: flex !important; align-items: center !important; justify-content: center !important; border-radius: 6px !important; opacity: 0.65; z-index: 10; }
+.pwd-input-wrap .toggle-pwd-btn:hover { opacity: 1; background: rgba(0,0,0,0.06) !important; }
 .error { color: #ff3b30; font-size: 11.5px; margin-top: 8px; font-weight: 500; text-align: center; }
 .profile-chip { min-width:34px; height:30px; padding:0 8px!important; border-radius:9px!important; background:var(--accent-light)!important; color:var(--accent)!important; font-size:11px!important; font-weight:800; }
 .scan-chip { width:30px; height:30px; padding:0!important; color:#0071e3!important; font-size:20px!important; font-weight:700; }
 .scan-chip:hover { background:#eaf5ff!important; }
+.scan-menu-wrap { position:relative; display:grid; place-items:center; }
+.scan-menu { position:absolute; right:0; top:36px; z-index:60; width:190px; padding:6px; border:1px solid #dfe3e8; border-radius:11px; background:#fff; box-shadow:0 14px 36px rgba(20,31,48,.18); }
+.scan-menu button { width:100%; min-height:39px; display:flex; align-items:center; gap:9px; padding:0 10px; border:0; border-radius:8px; background:#fff; color:#1d1d1f; cursor:pointer; font:650 11.5px/1.2 var(--font-family); text-align:left; }
+.scan-menu button:hover { background:#edf6ff; color:#0068d0; }
+.scan-menu-icon { width:24px; height:24px; display:grid; place-items:center; border-radius:7px; background:#eaf5ff; color:#0071e3; font-size:14px; }
 #otpTabContent { flex:1 1 auto; min-height:0; max-height:none; height:auto; overflow:hidden; flex-direction:column; background:#ededed; }
 #otpTabContent:not(.hidden) { display:flex; }
 .otp-toolbar { flex:0 0 auto; display:flex; gap:7px; padding:8px 12px; background:#f7f7f7; border-bottom:1px solid #d0d0d0; }
@@ -81,18 +85,26 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
 .otp-list::-webkit-scrollbar-track { background:#e3e3e3; }
 .otp-list::-webkit-scrollbar-thumb { background:#8e8e8e; border-radius:8px; }
 .otp-list::-webkit-scrollbar-thumb:hover { background:#737373; }
-.otp-card { position:relative; box-sizing:border-box; min-height:98px; margin-bottom:9px; padding:10px 48px 9px 12px; border:1px solid #c8c8c8; background:#fff; cursor:pointer; transition:border-color .15s,box-shadow .15s; font-family:Arial,"Segoe UI",sans-serif; }
+.otp-loading { padding:14px 8px; color:#6e6e73; font-size:10.5px; font-weight:650; }
+.otp-loading span { display:block; margin-bottom:9px; }
+.otp-loading i { display:block; height:76px; margin-bottom:8px; border:1px solid #d8dde2; background:linear-gradient(100deg,#fff 25%,#edf6ff 45%,#fff 65%); background-size:250% 100%; animation:otp-loading-sweep 1.1s ease-in-out infinite; }
+.otp-load-error { margin:14px 8px; padding:12px; display:grid; gap:8px; border:1px solid #ffd0cd; border-radius:8px; background:#fff7f6; color:#b42318; font-size:11px; line-height:1.45; text-align:center; }
+@keyframes otp-loading-sweep { to { background-position:-150% 0; } }
+.otp-card { position:relative; box-sizing:border-box; min-height:98px; margin-bottom:9px; padding:10px 48px 9px 12px; border:1px solid #c8c8c8; background:#fff; cursor:pointer; transition:border-color .15s,box-shadow .15s; font-family:Arial,"Segoe UI",sans-serif; -webkit-user-drag:element; }
 .otp-card:last-child { margin-bottom:0; }
 .otp-card:hover,.otp-card.dragging { border-color:#008bd2; box-shadow:0 0 0 1px rgba(0,139,210,.12); }
+.otp-card.just-saved { border-color:#20a464; box-shadow:0 0 0 2px rgba(32,164,100,.2); }
 .otp-issuer { color:#080808; font-size:12px; line-height:16px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .otp-code { margin:2px 0 1px; color:#008bd2; font:400 39px/43px "Segoe UI",Arial,sans-serif; letter-spacing:.055em; font-variant-numeric:tabular-nums; transition:color .2s; }
 .otp-code.expiring { color:#ef453d; }
+.otp-code.invalid { margin:10px 0 8px; color:#d92d20; font:650 12px/17px var(--font-family); letter-spacing:0; }
 .otp-account { color:#090909; font-size:11px; line-height:15px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .otp-side { position:absolute; right:9px; top:7px; bottom:7px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; color:#8b8b90; }
 .otp-card-tools { display:flex; align-items:center; gap:1px; }
 .otp-icon-btn { width:23px; height:23px; display:grid; place-items:center; padding:0; border:0; border-radius:5px; background:transparent; color:#90949a; cursor:pointer; font-size:16px; line-height:1; }
 .otp-icon-btn:hover { background:#eaf5ff; color:#0071e3; }
-.otp-drag-btn { cursor:grab; color:#9aa0a6; font-size:17px; letter-spacing:-2px; user-select:none; touch-action:none; }
+.otp-icon-btn:disabled { cursor:not-allowed; opacity:.35; }
+.otp-drag-btn { cursor:grab; color:#9aa0a6; font-size:17px; letter-spacing:-2px; user-select:none; touch-action:none; -webkit-user-drag:element; }
 .otp-drag-btn:active,.otp-card.dragging .otp-drag-btn { cursor:grabbing; color:#0071e3; }
 .otp-card.dragging { opacity:.62; border:1px dashed #0071e3; box-shadow:0 5px 18px rgba(0,113,227,.18); }
 .otp-qr-btn { font-size:19px; }
@@ -102,6 +114,11 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
 .otp-timer.expiring { --timer-color:#ef453d; color:#d9362f; background:conic-gradient(from -90deg,#ef453d 0deg var(--timer-angle),#f4cecb var(--timer-angle) 360deg); }
 .otp-delete-btn { display:none; width:100%; margin:3px 0 8px; padding:8px; border:1px solid #ffd0cd; border-radius:7px; background:#fff4f3; color:#d92d20; cursor:pointer; font-weight:650; }
 .otp-delete-btn.visible { display:block; }
+.otp-delete-confirm { margin:3px 0 8px; padding:10px; border:1px solid #ffd0cd; border-radius:9px; background:#fff7f6; }
+.otp-delete-confirm p { margin:0 0 9px; color:#85221c; font-size:11px; font-weight:650; text-align:center; }
+.otp-delete-confirm-actions { display:flex; gap:7px; }
+.otp-delete-confirm .otp-delete-confirm-btn { border-color:#d92d20; background:#d92d20; color:#fff; }
+.otp-delete-confirm .otp-delete-confirm-btn:hover { background:#c5221a; }
 .otp-qr-dialog { width:300px; text-align:center; }
 .otp-qr-dialog h3 { margin-bottom:4px; }
 .otp-qr-label { margin:0 0 12px; color:#67676c; font-size:11.5px; overflow-wrap:anywhere; }
@@ -119,16 +136,51 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
 .otp-dialog-actions { display:flex; gap:7px; margin-top:7px; }
 .otp-dialog button { flex:1; min-height:36px; border:1px solid #d5d8dd; border-radius:8px; padding:8px; background:#f5f5f7; color:#2c2c2e; cursor:pointer; font:650 12px/1.2 var(--font-family); }
 .otp-dialog button:hover { background:#ececf0; }
+.otp-dialog button:disabled { cursor:wait; opacity:.58; }
 .otp-dialog .primary { border-color:#0071e3; background:#0071e3; color:#fff; }
 .otp-dialog .primary:hover { background:#0077ed; }
-.otp-camera { width:100%; max-height:180px; background:#111; border-radius:9px; margin-bottom:8px; }
+.boot-view { flex:1 1 auto; padding:10px 12px; background:#f5f5f7; }
+.boot-view > span,.vault-loading > span { display:block; margin:2px 0 9px; color:#6e6e73; font-size:10.5px; font-weight:650; }
+.boot-row,.vault-loading-row { position:relative; height:52px; margin-bottom:8px; border:1px solid #e3e5e8; border-radius:10px; background:#fff; overflow:hidden; }
+.boot-row::after,.vault-loading-row::after { content:""; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg,transparent,rgba(0,113,227,.08),transparent); animation:vault-loading-sweep 1.15s ease-in-out infinite; }
+.boot-row i,.vault-loading-row i { position:absolute; left:10px; top:10px; width:32px; height:32px; border-radius:9px; background:#e9f3ff; }
+.boot-row b,.vault-loading-row b { position:absolute; left:52px; top:12px; width:42%; height:8px; border-radius:5px; background:#e4e6e9; }
+.boot-row em,.vault-loading-row em { position:absolute; left:52px; top:29px; width:30%; height:7px; border-radius:5px; background:#eef0f2; }
+.vault-loading { padding:8px 12px; }
+.vault-load-error { margin:16px 12px; padding:14px; display:grid; gap:7px; border:1px solid #ffd0cd; border-radius:10px; background:#fff7f6; color:#85221c; font-size:11px; line-height:1.4; text-align:center; }
+.vault-load-error strong { font-size:12px; }
+.vault-load-error button,.otp-load-error button { justify-self:center; min-width:88px; padding:7px 12px; border:1px solid #b7d8ff; border-radius:7px; background:#fff; color:#0068d0; cursor:pointer; font:650 11px/1.2 var(--font-family); }
+.vault-load-error button:hover,.otp-load-error button:hover { background:#edf6ff; }
+@keyframes vault-loading-sweep { to { transform:translateX(100%); } }
+.generator-status { min-height:15px; margin:-3px 0 3px; color:var(--muted); font-size:10.5px; line-height:1.35; }
+.generator-status.error { color:#d92d20; text-align:left; }
+.otp-dialog { max-height:calc(100vh - 36px); overflow-y:auto; }
+.otp-form-field { display:block; }
+.otp-form-field > span { display:block; margin:0 0 5px; color:#67676c; font-size:10.5px; font-weight:650; }
+.otp-field-hint { margin:-3px 0 9px; color:#86868b; font-size:10px; line-height:1.35; }
+.otp-form-status { min-height:15px; margin:0 0 4px; color:#087db5; font-size:10.5px; font-weight:600; line-height:1.35; text-align:center; }
+.otp-copy-toast[data-tone="success"] { background:rgba(24,126,74,.94); }
+.otp-copy-toast[data-tone="warning"] { background:rgba(166,93,11,.95); }
+.otp-copy-toast[data-tone="error"] { background:rgba(180,35,24,.95); }
+.otp-options-grid { display:grid; grid-template-columns:1.2fr .8fr .8fr; gap:7px; margin-bottom:9px; }
+.otp-dialog select { appearance:none; box-sizing:border-box; width:100%; height:38px; padding:0 28px 0 10px; border:1px solid #d2d5da; border-radius:8px; outline:0; background:#fff linear-gradient(45deg,transparent 50%,#777 50%) calc(100% - 13px) 16px/5px 5px no-repeat; color:#1d1d1f; font:500 12px/38px var(--font-family); }
+.otp-dialog select:focus { border-color:#0071e3; box-shadow:0 0 0 3px rgba(0,113,227,.1); }
+.auth-panel button:disabled { cursor:not-allowed; opacity:.45; }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline:3px solid rgba(0,113,227,.22); outline-offset:2px; }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition-duration:.01ms!important; animation-duration:.01ms!important; animation-iteration-count:1!important; } }
 .vault-shell { flex:1 1 auto; min-height:0; overflow:hidden; flex-direction:column; position:relative; }
 .vault-shell:not(.hidden) { display:flex; }
 </style></head><body>
 <header class="header">
   <div class="header-left"><img src="logo.svg" alt="logo" class="logo-img"><div class="header-title-box"><h1>Aegis Vault</h1><p>Bảo vệ ngay trên thiết bị</p></div></div>
   <div class="header-actions">
-    <button id="headerScanButton" class="scan-chip hidden" title="Quét QR thêm mã OTP" aria-label="Quét QR thêm mã OTP">⌗</button>
+    <div class="scan-menu-wrap">
+      <button id="headerScanButton" class="scan-chip hidden" title="Quét hoặc import mã QR" aria-label="Mở lựa chọn quét mã QR" aria-haspopup="menu" aria-expanded="false">⌗</button>
+      <div id="headerScanMenu" class="scan-menu hidden" role="menu">
+        <button id="scanScreenMenuBtn" type="button" role="menuitem"><span class="scan-menu-icon" aria-hidden="true">⌗</span>Quét màn hình</button>
+        <button id="scanImportMenuBtn" type="button" role="menuitem"><span class="scan-menu-icon" aria-hidden="true">▧</span>Import ảnh QR</button>
+      </div>
+    </div>
     <button id="profileButton" class="profile-chip hidden" title="Hồ sơ" aria-label="Mở hồ sơ">HI</button>
     <button id="lockButton" title="Khóa vault">🔒</button>
   </div>
@@ -145,14 +197,32 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
   <div class="main-tab" id="tabOtp"><span aria-hidden="true">◷</span> OTP</div>
 </nav>
 
+<section id="bootView" class="boot-view" aria-busy="true" aria-label="Đang mở Aegis Vault">
+  <span>Đang mở Vault…</span>
+  <div class="boot-row" aria-hidden="true"><i></i><b></b><em></em></div>
+  <div class="boot-row" aria-hidden="true"><i></i><b></b><em></em></div>
+  <div class="boot-row" aria-hidden="true"><i></i><b></b><em></em></div>
+  <div class="boot-row" aria-hidden="true"><i></i><b></b><em></em></div>
+</section>
+
 <!-- Auth View (Lock screen) -->
-<section id="authView" class="auth-panel">
+<section id="authView" class="auth-panel hidden">
   <span class="eyebrow" style="font-size:9.5px;color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:700">ZERO-KNOWLEDGE VAULT</span>
   <h2 id="authTitle" style="font-size:17px;margin:10px 0 4px;font-weight:700;letter-spacing:-0.01em">Mở khóa kho bảo mật</h2>
   <p id="authHint" style="font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.4">Nhập mật khẩu chính để tiếp tục.</p>
   <label for="masterPassword">Mật khẩu chính</label>
-  <input id="masterPassword" type="password">
-  <button id="authButton" class="primary">Mở khóa →</button>
+  <div class="pwd-input-wrap">
+    <input id="masterPassword" type="password" autocomplete="current-password">
+    <button type="button" class="toggle-pwd-btn" data-target="masterPassword" title="Hiện/Ẩn mật khẩu">👁️</button>
+  </div>
+  <div id="confirmMasterGroup" class="hidden">
+    <label for="confirmMasterPassword">Nhập lại mật khẩu chính</label>
+    <div class="pwd-input-wrap">
+      <input id="confirmMasterPassword" type="password" autocomplete="new-password">
+      <button type="button" class="toggle-pwd-btn" data-target="confirmMasterPassword" title="Hiện/Ẩn mật khẩu">👁️</button>
+    </div>
+  </div>
+  <button id="authButton" class="primary" style="margin-top:4px;">Mở khóa →</button>
   <p id="error" class="error"></p>
   <a id="authSignOutBtn" href="#" style="display:block; text-align:center; margin-top:14px; font-size:12px; color:var(--accent); text-decoration:none; font-weight:500;">Đăng nhập tài khoản Google khác</a>
 </section>
@@ -168,9 +238,13 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
 
 <!-- Vault list view -->
 <section id="vaultView" class="vault-shell hidden">
+  <div id="syncWarningBanner" class="hidden" style="flex:0 0 auto; background: #fff3f2; border-bottom: 1px solid #ffd0cd; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #b42318; font-size: 11px; font-weight: 500;">
+    <span id="syncWarningText" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">⚠️ Lỗi đồng bộ Firebase</span>
+    <button id="syncWarningActionBtn" type="button" style="flex: 0 0 auto; background: #b42318; color: white; border: 0; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer;">Chi tiết</button>
+  </div>
   <div class="sub-tabs-popup" id="subTabs">
     <div class="sub-tab-popup active" data-tab="popular">Popular</div>
-    <div class="sub-tab-popup" data-tab="recent">Recent</div>
+    <div class="sub-tab-popup" data-tab="recent">Cập nhật</div>
     <div class="sub-tab-popup" data-tab="az">A-Z</div>
   </div>
   
@@ -182,8 +256,9 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
       <div style="display:flex; gap:6px; align-items:center; margin-bottom: 8px;">
         <input id="genPasswordDisplay" type="text" readonly style="flex:1; min-width:0; padding:10px; border-radius:8px; border:1px solid var(--line); background:#f5f5f7; font-family:monospace; font-size:14px; text-align:center; font-weight:600; color:var(--text); outline:none;">
         <button id="genRegenBtn" title="Tạo mật khẩu mới" style="width:36px; height:36px; display:grid; place-items:center; border-radius:8px; background:var(--accent-light); color:var(--accent); border:0; cursor:pointer; font-size:16px; font-weight:bold; transition:0.1s;">↻</button>
-        <button id="genCopyBtn" style="width:auto; padding:0 14px; height:36px; border-radius:8px; background:#34c759; color:white; border:0; cursor:pointer; font-size:13px; font-weight:bold; transition:0.1s;">Copy</button>
+        <button id="genCopyBtn" style="width:auto; padding:0 14px; height:36px; border-radius:8px; background:#34c759; color:white; border:0; cursor:pointer; font-size:13px; font-weight:bold; transition:0.1s;">Sao chép</button>
       </div>
+      <p id="genCopyStatus" class="generator-status" role="status" aria-live="polite"></p>
       
       <div class="identity-field" style="border-bottom:0; padding:2px 0; font-size:12px;">
         <span>Độ dài: <strong id="lenLabel">16</strong> ký tự</span>
@@ -223,16 +298,42 @@ body { width: 380px; height: 550px; min-height: 550px; background: var(--bg); co
     </div>
   </div>
 
-  <div class="floating-actions">
-    <button class="float-btn add" id="floatAddBtn" title="Thêm mới tài khoản">＋</button>
-  </div>
 </section>
 
-<div id="otpModal" class="otp-modal hidden"><div class="otp-dialog"><h3 id="otpDialogTitle">Thêm mã xác thực</h3><input id="otpEditId" type="hidden"><input id="otpUri" placeholder="Dán otpauth:// hoặc để trống"><input id="otpIssuer" placeholder="Dịch vụ (GitHub, Microsoft...)"><input id="otpAccount" placeholder="Tài khoản"><input id="otpSecret" placeholder="Secret Base32"><video id="otpCamera" class="otp-camera hidden" autoplay playsinline></video><input id="otpQrFile" type="file" accept="image/*" class="hidden"><p id="otpFormError" class="error"></p><button id="otpDeleteBtn" class="otp-delete-btn">Xóa mã OTP này</button><div class="otp-dialog-actions"><button id="otpCameraBtn">Camera</button><button id="otpImageBtn">Ảnh QR</button></div><div class="otp-dialog-actions"><button id="otpCancelBtn">Hủy</button><button id="otpSaveBtn" class="primary">Lưu OTP</button></div></div></div>
+<div id="otpModal" class="otp-modal hidden">
+  <div class="otp-dialog" role="dialog" aria-modal="true" aria-labelledby="otpDialogTitle">
+    <h3 id="otpDialogTitle">Thêm mã xác thực</h3>
+    <input id="otpEditId" type="hidden">
+    <label class="otp-form-field" for="otpUri"><span>URI thiết lập (không bắt buộc)</span><input id="otpUri" inputmode="url" aria-describedby="otpUriHint" placeholder="otpauth://totp/…"></label>
+    <p class="otp-field-hint" id="otpUriHint">Dán URI để điền nhanh. Các trường hiển thị bên dưới luôn là dữ liệu được lưu.</p>
+    <label class="otp-form-field" for="otpIssuer"><span>Dịch vụ</span><input id="otpIssuer" autocomplete="off" placeholder="GitHub, Microsoft…"></label>
+    <label class="otp-form-field" for="otpAccount"><span>Tài khoản</span><input id="otpAccount" autocomplete="off" placeholder="name@example.com"></label>
+    <label class="otp-form-field" for="otpSecret"><span>Secret Base32</span><input id="otpSecret" autocomplete="off" spellcheck="false" placeholder="JBSWY3DPEHPK3PXP"></label>
+    <div class="otp-options-grid">
+      <label class="otp-form-field" for="otpAlgorithm"><span>Thuật toán</span><select id="otpAlgorithm"><option value="SHA1">SHA-1</option><option value="SHA256">SHA-256</option><option value="SHA512">SHA-512</option></select></label>
+      <label class="otp-form-field" for="otpDigits"><span>Số chữ số</span><select id="otpDigits"><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></label>
+      <label class="otp-form-field" for="otpPeriod"><span>Chu kỳ (giây)</span><input id="otpPeriod" type="number" min="5" max="300" step="1" value="30"></label>
+    </div>
+    <input id="otpQrFile" type="file" accept="image/*" class="hidden">
+    <p id="otpFormStatus" class="otp-form-status" role="status" aria-live="polite"></p>
+    <p id="otpFormError" class="error" role="alert"></p>
+    <button id="otpDeleteBtn" class="otp-delete-btn">Xóa mã OTP này</button>
+    <div id="otpDeleteConfirm" class="otp-delete-confirm hidden" role="alertdialog" aria-label="Xác nhận xóa mã OTP">
+      <p>Bạn có đồng ý xóa mã OTP này không?</p>
+      <div class="otp-delete-confirm-actions">
+        <button id="otpDeleteCancelBtn" type="button">Không xóa</button>
+        <button id="otpDeleteConfirmBtn" class="otp-delete-confirm-btn" type="button">Đồng ý xóa</button>
+      </div>
+    </div>
+    <div class="otp-dialog-actions"><button id="otpCameraBtn">Khoanh vùng QR</button><button id="otpImageBtn">Ảnh QR</button></div>
+    <div class="otp-dialog-actions"><button id="otpCancelBtn">Hủy</button><button id="otpSaveBtn" class="primary">Lưu OTP</button></div>
+  </div>
+</div>
 
 <div id="otpQrModal" class="otp-modal hidden"><div class="otp-dialog otp-qr-dialog"><h3 id="otpQrTitle">Mã QR OTP</h3><p id="otpQrLabel" class="otp-qr-label"></p><canvas id="otpQrCanvas" class="otp-qr-canvas" width="230" height="230"></canvas><p class="otp-qr-warning">QR chứa secret OTP. Chỉ quét bằng thiết bị tin cậy và không chia sẻ ảnh này.</p><div class="otp-dialog-actions"><button id="otpQrCloseBtn" class="primary">Đóng</button></div></div></div>
 
 <div id="otpCopyToast" class="otp-copy-toast" role="status" aria-live="polite">Đã sao chép mã OTP</div>
+<input id="headerQrFile" type="file" accept="image/*" class="hidden">
 
 <script type="module" src="popup.js"></script>
 </body></html>

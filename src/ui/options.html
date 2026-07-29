@@ -27,6 +27,9 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .promo-box { border: 1px solid var(--apple-line); border-radius: 12px; padding: 12px; background: var(--apple-panel); font-size: 11.5px; line-height: 1.45; color: var(--apple-muted); box-shadow: var(--shadow-soft); }
 .promo-box strong { color: var(--apple-text); display: block; margin-bottom: 4px; }
 .sidebar-footer { font-size: 10px; color: var(--apple-muted); text-align: center; }
+.pwd-input-wrap, .field-stack { position: relative; width: 100%; }
+.toggle-pwd-btn { position: absolute !important; right: 8px !important; top: 50% !important; transform: translateY(-50%) !important; width: 28px !important; height: 28px !important; padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--apple-muted) !important; font-size: 14px !important; cursor: pointer !important; display: flex !important; align-items: center !important; justify-content: center !important; border-radius: 6px !important; opacity: 0.65; z-index: 10; margin: 0 !important; }
+.toggle-pwd-btn:hover { opacity: 1; background: rgba(0,0,0,0.06) !important; }
 
 .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #ffffff; }
 .top-bar { display: flex; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--apple-line); background: var(--apple-panel); gap: 20px; }
@@ -93,12 +96,12 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .sub-tab:hover { color: var(--apple-text); }
 .sub-tab.active { color: var(--apple-accent); border-color: var(--apple-accent); }
 
-.grid-container { flex: 1; overflow-y: auto; padding: 24px; background: var(--apple-bg); }
+.grid-container { flex: 1; overflow-y: auto; padding: 24px 24px 80px 24px; background: var(--apple-bg); scroll-behavior: smooth; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
 .grid-card { border: 1px solid var(--apple-line); border-radius: 14px; padding: 20px 14px; text-align: center; background: var(--apple-panel); cursor: pointer; transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s, border-color 0.2s; position: relative; display: flex; flex-direction: column; align-items: center; box-shadow: var(--shadow-soft); }
 .grid-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-active); border-color: rgba(0,0,0,0.15); }
-.card-shield { width: 44px; height: 44px; border-radius: 11px; margin-bottom: 12px; background: var(--apple-green-bg); color: var(--apple-green); display: grid; place-items: center; overflow: hidden; }
-.card-shield img { width: 100%; height: 100%; object-fit: cover; }
+.card-shield { width: 44px; height: 44px; border-radius: 12px; margin-bottom: 12px; background: transparent; color: var(--apple-green); display: grid; place-items: center; overflow: hidden; }
+.card-shield img, .card-shield .aegis-site-fallback { width: 100%; height: 100%; object-fit: cover; display: block; }
 .card-title { font-weight: 600; font-size: 13.5px; margin: 0 0 3px; color: var(--apple-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; letter-spacing: -0.01em; }
 .card-user { font-size: 11.5px; color: var(--apple-muted); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
 .card-hover-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.02); border-radius: 14px; opacity: 0; display: grid; place-items: center; transition: opacity 0.15s; color: var(--apple-muted); font-size: 11px; font-weight: 600; backdrop-filter: blur(1px); }
@@ -109,8 +112,8 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--apple-line); }
 .drawer-header-left { display: flex; align-items: center; gap: 10px; }
 .drawer-header-left h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--apple-text); }
-.drawer-header-left .logo-badge { width: 28px; height: 28px; border-radius: 7px; background: var(--apple-green-bg); color: var(--apple-green); display: grid; place-items: center; font-size: 14px; overflow: hidden; }
-.drawer-header-left .logo-badge img { width: 100%; height: 100%; object-fit: cover; }
+.drawer-header-left .logo-badge { width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--apple-green); display: grid; place-items: center; font-size: 14px; overflow: hidden; }
+.drawer-header-left .logo-badge img, .drawer-header-left .logo-badge .aegis-site-fallback { width: 100%; height: 100%; object-fit: cover; display: block; }
 .drawer-actions { display: flex; gap: 8px; }
 .drawer-actions button { padding: 6px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; border: 1px solid var(--apple-line); background: #ffffff; color: var(--apple-text); transition: 0.1s; }
 .drawer-actions button:hover { background: #f5f5f7; }
@@ -168,6 +171,23 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .security-warning { display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px; margin: 0 0 17px !important; border: 1px solid rgba(245,158,11,.2); border-radius: 10px; background: rgba(245,158,11,.075); color: #92400e !important; }
 .result-message:empty { display: none; }
 .result-message { padding: 11px 13px; border-radius: 10px; background: #f5f5f7; }
+.backup-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; }
+.backup-pane { min-width: 0; padding: 17px; border: 1px solid var(--apple-line); border-radius: 13px; background: #fafafa; }
+.backup-pane h4 { margin: 0 0 5px; font-size: 13px; }
+.backup-pane > p { min-height: 38px; margin-bottom: 14px; font-size: 11.5px; }
+.backup-pane .config-actions { align-items: flex-end; flex-wrap: wrap; }
+.backup-pane .field-stack { min-width: 180px; }
+.favorite-control { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 12px; border: 1px solid var(--apple-line); border-radius: 10px; background: rgba(255,255,255,.55); }
+.favorite-copy { min-width: 0; }
+.favorite-copy strong, .favorite-copy span { display: block; }
+.favorite-copy strong { font-size: 12.5px; }
+.favorite-copy span { margin-top: 3px; color: var(--apple-muted); font-size: 11px; line-height: 1.35; }
+.favorite-toggle { width: 38px !important; height: 22px; flex: 0 0 38px; appearance: none; border: 0 !important; border-radius: 99px !important; background: #d1d1d6 !important; padding: 2px !important; cursor: pointer; transition: background .15s; }
+.favorite-toggle::after { content: ""; display: block; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.18); transition: transform .15s; }
+.favorite-toggle:checked { background: var(--apple-accent) !important; }
+.favorite-toggle:checked::after { transform: translateX(16px); }
+button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(0,113,227,.22); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
 
 /* Security Center */
 .security-shell { display: flex; flex-direction: column; gap: 18px; }
@@ -199,8 +219,8 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .security-table th { padding: 11px 16px; background: #fafafa; color: var(--apple-muted); text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
 .security-table td { padding: 13px 16px; border-top: 1px solid rgba(0,0,0,.045); font-size: 12.5px; vertical-align: middle; }
 .security-site { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.security-site-icon { width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border-radius: 8px; background: var(--apple-accent-light); color: var(--apple-accent); overflow: hidden; }
-.security-site-icon img { width: 100%; height: 100%; object-fit: cover; }
+.security-site-icon { width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border-radius: 8px; background: transparent; color: var(--apple-accent); overflow: hidden; }
+.security-site-icon img, .security-site-icon .aegis-site-fallback { width: 100%; height: 100%; object-fit: cover; display: block; }
 .security-site-copy { min-width: 0; } .security-site-copy strong, .security-site-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .security-site-copy span { margin-top: 2px; color: var(--apple-muted); font-size: 11px; }
 .strength-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; }
@@ -209,6 +229,7 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .security-edit { padding: 6px 10px; border: 1px solid var(--apple-line); border-radius: 7px; background: #fff; color: var(--apple-accent); cursor: pointer; font-size: 11.5px; font-weight: 650; }
 .security-empty { padding: 40px 20px; color: var(--apple-muted); text-align: center; font-size: 12.5px; }
 @media (max-width: 850px) { .security-hero { grid-template-columns: 1fr; } .security-stats { grid-template-columns: repeat(2,1fr); } .security-table th:nth-child(2), .security-table td:nth-child(2) { display:none; } }
+@media (max-width: 850px) { .backup-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .config-actions { align-items: stretch; flex-direction: column; } .config-actions button { width: 100%; } .field-stack { width: 100%; min-width: 0; } .file-picker { align-items: stretch; flex-direction: column; } }
 </style></head><body>
 <div class="modal-overlay" id="overlay"></div>
@@ -251,7 +272,7 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
   </header>
   <nav class="sub-tabs-bar" id="subTabsBar">
     <div class="sub-tab active" data-tab="popular">Popular</div>
-    <div class="sub-tab" data-tab="recent">Recently Used</div>
+    <div class="sub-tab" data-tab="recent">Cập nhật gần đây</div>
     <div class="sub-tab" data-tab="az">A-Z</div>
   </nav>
   
@@ -311,22 +332,31 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
         </div>
       </div>
     </div>
-    
+
     <div class="config-card">
       <h3>Đổi mật khẩu chính</h3>
       <p>Thay đổi mật khẩu chính dùng để mã hóa và giải mã kho mật khẩu cục bộ của bạn.</p>
-      <div style="max-width: 320px; display: flex; flex-direction: column;">
+      <div style="max-width: 340px; display: flex; flex-direction: column; gap: 10px;">
         <div>
           <label for="changeCurrentPassword">Mật khẩu chính hiện tại</label>
-          <input id="changeCurrentPassword" type="password" style="width: 100%;">
+          <div style="position:relative; display:flex; align-items:center; width:100%;">
+            <input id="changeCurrentPassword" type="password" style="width: 100%; padding-right: 36px;">
+            <button type="button" class="toggle-pwd-btn" data-target="changeCurrentPassword" title="Hiện/Ẩn mật khẩu" style="position:absolute; right:8px; background:none; border:none; cursor:pointer; font-size:14px; padding:4px; opacity:0.65;">👁️</button>
+          </div>
         </div>
         <div>
-          <label for="changeNewPassword">Mật khẩu chính mới (tối thiểu 10 ký tự)</label>
-          <input id="changeNewPassword" type="password" style="width: 100%;">
+          <label for="changeNewPassword">Mật khẩu chính mới (tối thiểu 6 ký tự)</label>
+          <div style="position:relative; display:flex; align-items:center; width:100%;">
+            <input id="changeNewPassword" type="password" style="width: 100%; padding-right: 36px;">
+            <button type="button" class="toggle-pwd-btn" data-target="changeNewPassword" title="Hiện/Ẩn mật khẩu" style="position:absolute; right:8px; background:none; border:none; cursor:pointer; font-size:14px; padding:4px; opacity:0.65;">👁️</button>
+          </div>
         </div>
         <div>
           <label for="changeConfirmPassword">Xác nhận mật khẩu chính mới</label>
-          <input id="changeConfirmPassword" type="password" style="width: 100%;">
+          <div style="position:relative; display:flex; align-items:center; width:100%;">
+            <input id="changeConfirmPassword" type="password" style="width: 100%; padding-right: 36px;">
+            <button type="button" class="toggle-pwd-btn" data-target="changeConfirmPassword" title="Hiện/Ẩn mật khẩu" style="position:absolute; right:8px; background:none; border:none; cursor:pointer; font-size:14px; padding:4px; opacity:0.65;">👁️</button>
+          </div>
         </div>
         <button id="changePasswordBtn" class="active" style="width: 100%; margin-top: 8px;">Cập nhật mật khẩu chính</button>
         <p id="changePasswordResult" style="margin: 12px 0 0; font-size: 12.5px; font-weight: 500; white-space: pre-wrap;"></p>
@@ -335,6 +365,61 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
   </section>
   
   <section class="grid-container hidden" id="settingsSection">
+    <div class="config-card">
+      <div class="config-card-header">
+        <div class="config-card-icon" aria-hidden="true">◇</div>
+        <div>
+          <h3>Backup toàn bộ Vault đã mã hóa</h3>
+          <p>Tạo một bản sao đầy đủ gồm tài khoản và mã OTP. Nội dung backup vẫn được bảo vệ bằng mật khẩu chính.</p>
+        </div>
+      </div>
+      <p class="security-warning"><span aria-hidden="true">⚠</span><span>Giữ tệp backup và mật khẩu chính ở hai nơi an toàn khác nhau. Không thể khôi phục nếu quên mật khẩu.</span></p>
+      <div class="backup-grid">
+        <div class="backup-pane">
+          <h4>Tải backup mã hóa</h4>
+          <p>Dùng bản này để chuyển Vault sang máy khác hoặc khôi phục khi Firebase gặp sự cố.</p>
+          <div class="config-actions">
+            <div class="field-stack" style="position:relative;">
+              <label for="backupExportPassword">Mật khẩu chính</label>
+              <div style="position:relative; display:flex; align-items:center; width:100%;">
+                <input id="backupExportPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu chính" style="width:100%; padding-right:36px;">
+                <button type="button" class="toggle-pwd-btn" data-target="backupExportPassword" title="Hiện/Ẩn mật khẩu" style="position:absolute; right:8px; background:none; border:none; cursor:pointer; font-size:14px; padding:4px; opacity:0.65;">👁️</button>
+              </div>
+            </div>
+            <button id="backupExportButton" class="active" type="button">Tải backup</button>
+          </div>
+          <p id="backupExportResult" class="result-message" role="status" aria-live="polite"></p>
+        </div>
+        <div class="backup-pane">
+          <h4>Khôi phục từ backup</h4>
+          <p>Dữ liệu trong tệp sẽ thay thế Vault hiện tại rồi được đồng bộ lại. Hãy kiểm tra đúng tệp trước khi tiếp tục.</p>
+          <div class="file-picker">
+            <input id="backupFile" type="file" accept=".json,.aegis,application/json">
+            <label class="file-select-button" for="backupFile">Chọn tệp backup</label>
+            <div class="file-meta"><span class="file-name" id="backupFileName">Chưa chọn tệp</span><span class="file-hint">Tệp .json hoặc .aegis do Aegis Vault tạo</span></div>
+          </div>
+          <div class="config-actions">
+            <div class="field-stack" style="position:relative;">
+              <label for="backupImportPassword">Mật khẩu chính của backup</label>
+              <div style="position:relative; display:flex; align-items:center; width:100%;">
+                <input id="backupImportPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu chính" style="width:100%; padding-right:36px;">
+                <button type="button" class="toggle-pwd-btn" data-target="backupImportPassword" title="Hiện/Ẩn mật khẩu" style="position:absolute; right:8px; background:none; border:none; cursor:pointer; font-size:14px; padding:4px; opacity:0.65;">👁️</button>
+              </div>
+            </div>
+            <button id="backupImportButton" class="active" type="button" disabled>Khôi phục Vault</button>
+          </div>
+          <p id="backupImportResult" class="result-message" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+      <div id="recoveryExportPane" class="backup-pane hidden" style="margin-top:14px">
+        <h4>Bản local trước khi dùng Firebase</h4>
+        <p>Aegis đã giữ lại bản local cũ ở dạng mã hóa. Tải tệp này trước khi dọn dữ liệu; khi khôi phục cần mật khẩu chính cũ của bản đó.</p>
+        <div class="config-actions">
+          <button id="recoveryExportButton" class="active" type="button">Tải bản local cũ</button>
+        </div>
+        <p id="recoveryExportResult" class="result-message" role="status" aria-live="polite"></p>
+      </div>
+    </div>
     <div class="config-card">
       <div class="config-card-header">
         <div class="config-card-icon" aria-hidden="true">⇧</div>
@@ -356,7 +441,7 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
         <button id="importButton" class="active" disabled>Nhập vào Vault</button>
       </div>
       <p id="importResult" class="result-message" style="white-space:pre-wrap;margin-top:16px;color:var(--apple-muted);font-size:12.5px"></p>
-      <p class="security-warning"><span aria-hidden="true">⚠</span><span>Tệp CSV xuất ra chứa mật khẩu có thể đọc được. Chỉ lưu trên thiết bị tin cậy.</span></p>
+      <p class="security-warning"><span aria-hidden="true">⚠</span><span>Tệp CSV chứa mật khẩu dạng rõ và giữ nguyên dữ liệu để nhập sang password manager. Không mở tệp bằng Excel hoặc Google Sheets vì nội dung website có thể bị diễn giải như công thức.</span></p>
       <div class="config-actions compact-export-actions"><div class="field-stack"><label for="exportPassword">Mật khẩu chính để xuất CSV</label><div class="password-field"><span class="field-icon">●</span><input id="exportPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu chính"></div></div><button id="exportButton" class="active">Xuất LastPass CSV</button></div>
       <p id="exportResult" class="result-message" style="margin-top:14px;font-size:12.5px"></p>
     </div>
@@ -388,39 +473,42 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
     
     <div class="form-section-title">Thông tin chung</div>
     <div class="form-group">
-      <label>Name</label>
+      <label for="editTitle">Name</label>
       <input type="text" id="editTitle" placeholder="facebook.com">
     </div>
     <div class="form-group">
-      <label>Go to URL</label>
+      <label for="editUrl">Go to URL</label>
       <div class="input-with-btn">
         <input type="url" id="editUrl" placeholder="https://www.facebook.com/">
         <button id="openUrlBtn" type="button">Open ↗</button>
       </div>
     </div>
     <div class="form-group">
-      <label>Match URL</label>
+      <label for="editMatchUrl">Match URL</label>
       <input type="text" id="editMatchUrl" placeholder="Khớp tên miền mặc định" readonly>
     </div>
     
     <div class="form-section-title">Thông tin tài khoản</div>
     <div class="form-group">
-      <label>User ID</label>
+      <label for="editUsername">User ID</label>
       <input type="text" id="editUsername">
     </div>
     <div class="form-group">
-      <label>Password</label>
+      <label for="editPassword">Password</label>
       <div class="input-with-btn">
         <input type="password" id="editPassword">
         <button id="togglePassword" type="button">Show</button>
       </div>
     </div>
     
-    <button class="secondary-btn" type="button">+ Add Field</button>
-    <button class="secondary-btn" type="button">+ Add authenticator setup key</button>
+    <label class="favorite-control" for="editFavorite">
+      <span class="favorite-copy"><strong>Đánh dấu yêu thích</strong><span>Ưu tiên tài khoản này trong danh sách phổ biến.</span></span>
+      <input class="favorite-toggle" id="editFavorite" type="checkbox" role="switch">
+    </label>
     
     <div class="form-section-title">Ghi chú bổ sung</div>
     <div class="form-group">
+      <label for="editNotes">Ghi chú</label>
       <textarea id="editNotes" rows="3" placeholder="Ghi chú bảo mật..."></textarea>
     </div>
     

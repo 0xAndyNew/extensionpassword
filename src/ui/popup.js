@@ -1,63 +1,141 @@
 import { generateTotp, parseOtpAuthUri, serializeOtpAuthUri } from '../vault/totp.js';
 import qrcode from '../vendor/qrcode-generator.js';
-import jsQR from '../vendor/jsqr.js';
+import '../vendor/jsqr.js';
+import { setSiteIcon } from './favicon.js';
 
 const $ = id => document.getElementById(id);
+const jsQR = globalThis.jsQR;
 let credentials = [];
 let otpAccounts = [];
 let otpTimer = null;
-let cameraStream = null;
+let screenScanInFlight = false;
 let isOtpDragging = false;
+let otpDragArmedId = null;
+let otpRenderGeneration = 0;
 let activeSubTab = 'popular';
 let activeMainTab = 'logins';
 let currentOrigin = '';
+let currentTabId = null;
+let signedIn = false;
+let applyingOtpUri = false;
+let vaultUnlocked = false;
+let otpSaveInFlight = false;
+let vaultLoadGeneration = 0;
+const OPEN_OTP_TAB_SESSION_KEY = 'aegisOpenOtpOnNextPopup';
+const LAST_QR_SAVED_SESSION_KEY = 'aegisLastQrSavedOtp';
+let recentlySavedOtp = null;
+let recentlySavedOtpShown = false;
 
-const BLUE_GLOBE_SVG = `<svg viewBox="0 0 100 100" width="20" height="20" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="45" cy="55" r="35" stroke="#0071e3" stroke-width="5" fill="none"/>
-  <path d="M45 20 C30 30 30 80 45 90" stroke="#0071e3" stroke-width="3" fill="none"/>
-  <path d="M45 20 C60 30 60 80 45 90" stroke="#0071e3" stroke-width="3" fill="none"/>
-  <line x1="45" y1="20" x2="45" y2="90" stroke="#0071e3" stroke-width="3"/>
-  <line x1="10" y1="55" x2="80" y2="55" stroke="#0071e3" stroke-width="3"/>
-  <path d="M15 37 C25 45 65 45 75 37" stroke="#0071e3" stroke-width="3" fill="none"/>
-  <path d="M15 73 C25 65 65 65 75 73" stroke="#0071e3" stroke-width="3" fill="none"/>
-  <path d="M8 68 C 12 90, 52 98, 78 78 C 90 68, 93 52, 86 35" stroke="#0071e3" stroke-width="6" stroke-linecap="round" fill="none"/>
-  <path d="M78 37 L94 28 L88 46 Z" fill="#0071e3"/>
-</svg>`;
+async function send(message, { timeoutMs = 0 } = {}) {
+  let timeoutId = null;
+  try {
+    const request = chrome.runtime.sendMessage(message);
+    if (!timeoutMs) return await request;
+    return await Promise.race([
+      request,
+      new Promise(resolve => {
+        timeoutId = setTimeout(() => resolve({
+          ok: false,
+          error: 'Aegis phản hồi chậm. Đang thử kết nối lại…',
+          timeout: true
+        }), timeoutMs);
+      })
+    ]);
+  } catch (error) {
+    return { ok: false, error: error?.message || 'Không thể kết nối với Aegis Vault.' };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
-const send = message => chrome.runtime.sendMessage(message);
+function wait(delayMs) {
+  return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+async function sendReadWithRetry(message, { attempts = 2, timeoutMs = 4000 } = {}) {
+  let response = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    response = await send(message, { timeoutMs });
+    if (response?.ok) return response;
+    if (attempt + 1 < attempts) await wait(120 * (attempt + 1));
+  }
+  return response || { ok: false, error: 'Không thể đọc dữ liệu Vault.' };
+}
+
+async function activePageContext() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs[0];
+  if (!tab?.id || !tab.url) return null;
+  try {
+    const url = new URL(tab.url);
+    const isLocalHttp = url.protocol === 'http:'
+      && ['localhost', '127.0.0.1'].includes(url.hostname.toLowerCase());
+    if (url.protocol !== 'https:' && !isLocalHttp) return null;
+    return { tabId: tab.id, origin: url.origin };
+  } catch {
+    return null;
+  }
+}
+
+function updateSyncWarningBanner(syncStatus) {
+  const banner = $('syncWarningBanner');
+  const text = $('syncWarningText');
+  const actionBtn = $('syncWarningActionBtn');
+  if (!banner || !text || !actionBtn) return;
+
+  const state = String(syncStatus?.state || '').toLowerCase();
+  if (['conflict', 'staged', 'error'].includes(state)) {
+    banner.classList.remove('hidden');
+    let message = syncStatus.error || 'Lỗi kết nối hoặc đồng bộ Firebase.';
+    if (state === 'conflict' || state === 'staged') {
+      message = 'Xung đột dữ liệu với Firebase.';
+      actionBtn.textContent = 'Xử lý';
+      actionBtn.onclick = async () => {
+        await send({ type: 'OPEN_OPTIONS' });
+        window.close();
+      };
+    } else {
+      actionBtn.textContent = 'Chi tiết';
+      actionBtn.onclick = () => {
+        alert(`Chi tiết lỗi đồng bộ:\n${syncStatus.error || 'Không xác định'}`);
+      };
+    }
+    text.textContent = `⚠️ ${message}`;
+  } else {
+    banner.classList.add('hidden');
+  }
+}
 
 function setAccountControls(isSignedIn) {
   $('profileButton').classList.toggle('hidden', !isSignedIn);
-  $('headerScanButton').classList.toggle('hidden', !isSignedIn);
+  $('headerScanButton').classList.toggle('hidden', !isSignedIn || !vaultUnlocked);
   $('lockButton').classList.toggle('hidden', !isSignedIn);
 }
 
 async function init() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tabs[0]?.url) {
-    try {
-      currentOrigin = new URL(tabs[0].url).origin;
-    } catch (e) {
-      currentOrigin = '';
-    }
-  }
+  const [page, s] = await Promise.all([
+    activePageContext(),
+    sendReadWithRetry({ type: 'STATUS' }, { attempts: 2, timeoutMs: 3000 })
+  ]);
+  currentOrigin = page?.origin || '';
+  currentTabId = page?.tabId || null;
 
-  const s = await send({ type: 'STATUS' });
-  const isSignedIn = Boolean(s.ok && s.user);
-  setAccountControls(isSignedIn);
+  signedIn = Boolean(s.ok && s.user);
+  setAccountControls(signedIn);
 
   if (s.ok) {
+    updateSyncWarningBanner(s.syncStatus);
     if (s.user) {
       updateProfileUI(s.user);
     }
     
     if (s.unlocked) {
-      showVault();
+      await showVault();
     } else {
-      $('googleView').classList.toggle('hidden', isSignedIn);
-      $('authView').classList.toggle('hidden', !isSignedIn);
+      $('googleView').classList.toggle('hidden', signedIn);
+      $('authView').classList.toggle('hidden', !signedIn);
       $('vaultView').classList.add('hidden');
-      if (isSignedIn) authMode(s.exists);
+      if (signedIn) authMode(s.exists, s.canCreate);
     }
   } else {
     $('googleView').classList.remove('hidden');
@@ -67,6 +145,21 @@ async function init() {
   
   // Khởi tạo các trình lắng nghe sự kiện của Password Generator
   initGenerator();
+  initPasswordToggles();
+}
+
+function initPasswordToggles() {
+  document.querySelectorAll('.toggle-pwd-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      const targetId = btn.dataset.target;
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      const isPwd = input.type === 'password';
+      input.type = isPwd ? 'text' : 'password';
+      btn.textContent = isPwd ? '🙈' : '👁️';
+    };
+  });
 }
 
 function updateProfileUI(user) {
@@ -79,35 +172,94 @@ function updateProfileUI(user) {
   $('pEmail').textContent = email || 'Chưa có email';
 }
 
-function authMode(exists) {
+function authMode(exists, canCreate = true) {
+  vaultUnlocked = false;
+  setAccountControls(signedIn);
   $('authView').classList.remove('hidden');
   $('vaultView').classList.add('hidden');
-  $('authTitle').textContent = exists ? 'Mở khóa kho bảo mật' : 'Tạo kho bảo mật';
-  $('authHint').textContent = exists ? 'Nhập mật khẩu chính để tiếp tục.' : 'Tạo mật khẩu chính tối thiểu 10 ký tự để mã hóa vault.';
-  $('authButton').textContent = exists ? 'Mở khóa →' : 'Tạo vault →';
+  const creationBlocked = !exists && canCreate === false;
+  $('authTitle').textContent = exists ? 'Mở khóa kho bảo mật' : creationBlocked ? 'Chưa thể tạo Vault' : 'Tạo kho bảo mật';
+  $('authHint').textContent = exists
+    ? 'Nhập mật khẩu chính để tiếp tục.'
+    : creationBlocked
+      ? 'Aegis chưa kiểm tra xong dữ liệu trên Firebase. Hãy thử đồng bộ lại để tránh ghi đè backup hiện có.'
+      : 'Tạo câu mật khẩu chính tối thiểu 6 ký tự, dài và duy nhất.';
+  $('authButton').textContent = exists ? 'Mở khóa →' : creationBlocked ? 'Đang chờ Firebase' : 'Tạo vault →';
+  $('authButton').disabled = creationBlocked;
+  $('masterPassword').disabled = creationBlocked;
+  $('masterPassword').autocomplete = exists ? 'current-password' : 'new-password';
+  $('confirmMasterGroup').classList.toggle('hidden', exists || creationBlocked);
+  $('confirmMasterPassword').disabled = exists || creationBlocked;
+  if (exists || creationBlocked) $('confirmMasterPassword').value = '';
   $('authButton').dataset.exists = String(exists);
 }
 
+function renderVaultLoading() {
+  $('credentialList').classList.remove('hidden');
+  $('identityTabContent').classList.add('hidden');
+  $('generatorTabContent').classList.add('hidden');
+  $('otpTabContent').classList.add('hidden');
+  $('subTabs').classList.remove('hidden');
+  $('credentialList').innerHTML = `
+    <div class="vault-loading" role="status" aria-live="polite">
+      <span>Đang mở Vault…</span>
+      ${Array.from({ length: 5 }, () => `
+        <div class="vault-loading-row" aria-hidden="true">
+          <i></i><b></b><em></em>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderLoadFailure(container, {
+  className,
+  title = '',
+  message,
+  buttonId,
+  onRetry
+}) {
+  const wrapper = document.createElement('div');
+  wrapper.className = className;
+  wrapper.setAttribute('role', 'alert');
+  if (title) {
+    const heading = document.createElement('strong');
+    heading.textContent = title;
+    wrapper.append(heading);
+  }
+  const detail = document.createElement('span');
+  detail.textContent = message;
+  const retryButton = document.createElement('button');
+  retryButton.id = buttonId;
+  retryButton.type = 'button';
+  retryButton.textContent = 'Thử lại';
+  retryButton.onclick = onRetry;
+  wrapper.append(detail, retryButton);
+  container.replaceChildren(wrapper);
+}
+
 async function showVault() {
+  const loadGeneration = ++vaultLoadGeneration;
+  vaultUnlocked = true;
+  setAccountControls(signedIn);
   $('googleView').classList.add('hidden');
   $('authView').classList.add('hidden');
   $('vaultView').classList.remove('hidden');
-  
-  const r = await send({ type: 'LIST' });
+  renderVaultLoading();
+  const r = await sendReadWithRetry({ type: 'LIST' }, { attempts: 2, timeoutMs: 4000 });
+  if (loadGeneration !== vaultLoadGeneration) return;
   if (r.ok) {
-    credentials = r.credentials;
+    credentials = Array.isArray(r.credentials) ? r.credentials : [];
     render();
   } else {
     $('error').textContent = r.error;
-  }
-}
-
-function getFavicon(urlStr) {
-  try {
-    const url = new URL(urlStr);
-    return `${url.origin}/favicon.ico`;
-  } catch (e) {
-    return null;
+    renderLoadFailure($('credentialList'), {
+      className: 'vault-load-error',
+      title: 'Chưa tải được dữ liệu Vault',
+      message: r.error || 'Aegis chưa phản hồi.',
+      buttonId: 'vaultRetryBtn',
+      onRetry: () => { void showVault(); }
+    });
   }
 }
 
@@ -126,16 +278,16 @@ function render() {
   const container = $('credentialList');
   
   if (activeMainTab === 'profile') {
-    container.classList.add('hidden'); $('identityTabContent').classList.remove('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.add('hidden'); $('floatAddBtn').classList.add('hidden'); stopOtpTimer(); return;
+    container.classList.add('hidden'); $('identityTabContent').classList.remove('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.add('hidden'); stopOtpTimer(); return;
   }
   if (activeMainTab === 'generator') {
-    container.classList.add('hidden'); $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.remove('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.add('hidden'); $('floatAddBtn').classList.add('hidden'); stopOtpTimer(); generatePassword(); return;
+    container.classList.add('hidden'); $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.remove('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.add('hidden'); stopOtpTimer(); generatePassword(); return;
   }
   if (activeMainTab === 'otp') {
-    container.classList.add('hidden'); $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.remove('hidden'); $('subTabs').classList.add('hidden'); $('floatAddBtn').classList.add('hidden'); loadOtp(); return;
+    container.classList.add('hidden'); $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.remove('hidden'); $('subTabs').classList.add('hidden'); renderOtpLoading(); void loadOtp(); return;
   }
   container.classList.remove('hidden');
-  $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.remove('hidden'); $('floatAddBtn').classList.remove('hidden'); stopOtpTimer();
+  $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.remove('hidden'); stopOtpTimer();
 
   if (!list.length) {
     container.innerHTML = `<div style="padding:24px;text-align:center;color:#94a3b8;font-size:12px">Không có tài khoản nào được tìm thấy.</div>`;
@@ -151,19 +303,7 @@ function render() {
     icon.style.display = 'grid';
     icon.style.placeItems = 'center';
     
-    const fav = getFavicon(item.url || item.origins?.[0]);
-    if (fav) {
-      const img = document.createElement('img');
-      img.src = fav;
-      img.onerror = () => {
-        icon.style.background = 'rgba(0, 113, 227, 0.08)';
-        icon.innerHTML = BLUE_GLOBE_SVG;
-      };
-      icon.append(img);
-    } else {
-      icon.style.background = 'rgba(0, 113, 227, 0.08)';
-      icon.innerHTML = BLUE_GLOBE_SVG;
-    }
+    setSiteIcon(icon, item.url || item.origins?.[0]);
     
     const info = document.createElement('div');
     info.className = 'list-info';
@@ -185,13 +325,26 @@ function render() {
     el.append(icon, info, menuBtn);
     
     el.onclick = async () => {
-      if (!currentOrigin) return;
-      const res = await send({ type: 'FILL', id: item.id, origin: currentOrigin });
+      const page = await activePageContext();
+      if (!page || page.tabId !== currentTabId || page.origin !== currentOrigin) {
+        alert('Trang đang mở đã thay đổi. Hãy đóng rồi mở lại Aegis Vault trên trang cần điền.');
+        return;
+      }
+      const res = await send({ type: 'FILL', id: item.id, origin: page.origin, tabId: page.tabId });
       if (res.ok) {
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tabs[0]?.id) {
-          chrome.tabs.sendMessage(tabs[0].id, { type: 'AEGIS_AUTOFILL', username: res.credential.username, password: res.credential.password });
-          window.close();
+        const confirmedPage = await activePageContext();
+        if (confirmedPage?.tabId === page.tabId && confirmedPage.origin === page.origin) {
+          try {
+            await chrome.tabs.sendMessage(confirmedPage.tabId, {
+              type: 'AEGIS_AUTOFILL',
+              username: res.credential.username,
+              password: res.credential.password,
+              origin: confirmedPage.origin
+            });
+            window.close();
+          } catch {
+            alert('Không thể kết nối với trang này. Hãy tải lại trang rồi thử lại.');
+          }
         }
       } else {
         alert(res.error);
@@ -207,12 +360,15 @@ $('googleButton').onclick = async () => {
   $('googleError').textContent = '';
   const r = await send({ type: 'GOOGLE_SIGN_IN' });
   if (r.ok) {
+    signedIn = true;
     updateProfileUI(r.user);
     setAccountControls(true);
     $('googleView').classList.add('hidden');
-    const s = await send({ type: 'STATUS' });
-    authMode(s.exists);
+    const s = await sendReadWithRetry({ type: 'STATUS' }, { attempts: 2, timeoutMs: 3000 });
+    if (s.ok) authMode(s.exists, s.canCreate);
+    else $('googleError').textContent = s.error;
   } else {
+    signedIn = false;
     setAccountControls(false);
     $('googleError').textContent = r.error;
   }
@@ -223,19 +379,57 @@ $('authButton').onclick = async () => {
   $('error').textContent = '';
   const password = $('masterPassword').value;
   const type = $('authButton').dataset.exists === 'true' ? 'UNLOCK' : 'CREATE';
-  const r = await send({ type, password });
-  if (r.ok) {
-    showVault();
-  } else {
-    if (r.error && (r.error.includes('decryption') || r.error.includes('Decryption') || r.error.includes('decrypt'))) {
-      $('error').textContent = 'Mật khẩu không đúng. Vui lòng thử lại.';
-    } else {
-      $('error').textContent = r.error || 'Mở khóa thất bại. Vui lòng thử lại.';
+
+  if (!password) {
+    $('error').textContent = '⚠️ Vui lòng nhập mật khẩu chính.';
+    return;
+  }
+
+  if (type === 'CREATE') {
+    if (password.length < 6) {
+      $('error').textContent = '⚠️ Mật khẩu chính phải có ít nhất 6 ký tự.';
+      return;
     }
+    const confirmPassword = $('confirmMasterPassword').value;
+    if (!confirmPassword) {
+      $('error').textContent = '⚠️ Vui lòng nhập lại mật khẩu chính để xác nhận.';
+      return;
+    }
+    if (password !== confirmPassword) {
+      $('error').textContent = '❌ Mật khẩu chính và Nhập lại mật khẩu không trùng khớp nhau!';
+      return;
+    }
+  }
+
+  const btn = $('authButton');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = type === 'CREATE' ? '⏳ Đang khởi tạo kho bảo mật…' : '⏳ Đang kiểm tra & mở khóa…';
+
+  try {
+    const r = await send({ type, password });
+    if (r.ok) {
+      await showVault();
+    } else {
+      btn.disabled = false;
+      btn.textContent = originalText;
+      if (r.error && (r.error.includes('decryption') || r.error.includes('Decryption') || r.error.includes('decrypt'))) {
+        $('error').textContent = '❌ Mật khẩu không đúng. Vui lòng thử lại.';
+      } else {
+        $('error').textContent = '❌ ' + (r.error || 'Mở khóa thất bại. Vui lòng thử lại.');
+      }
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = originalText;
+    $('error').textContent = '❌ ' + (err?.message || 'Có lỗi xảy ra.');
   }
 };
 
 $('masterPassword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('authButton').click();
+});
+$('confirmMasterPassword').addEventListener('keydown', e => {
   if (e.key === 'Enter') $('authButton').click();
 });
 
@@ -248,10 +442,21 @@ $('lockButton').onclick = async () => {
   location.reload();
 };
 
-
 // Đăng xuất Google từ tab Profile
+let profileSignOutConfirm = false;
+let profileSignOutTimer = null;
 $('profileSignOutBtn').onclick = async () => {
-  if (confirm('Bạn có chắc chắn muốn đăng xuất Google?')) {
+  if (!profileSignOutConfirm) {
+    profileSignOutConfirm = true;
+    $('profileSignOutBtn').textContent = 'Xác nhận đăng xuất?';
+    $('profileSignOutBtn').style.background = 'rgba(244,63,94,.15)';
+    profileSignOutTimer = setTimeout(() => {
+      profileSignOutConfirm = false;
+      $('profileSignOutBtn').textContent = 'Đăng xuất Google';
+      $('profileSignOutBtn').style.background = 'rgba(244,63,94,.05)';
+    }, 3000);
+  } else {
+    clearTimeout(profileSignOutTimer);
     setAccountControls(false);
     await send({ type: 'GOOGLE_SIGN_OUT' });
     location.reload();
@@ -259,9 +464,19 @@ $('profileSignOutBtn').onclick = async () => {
 };
 
 // Đăng nhập tài khoản Google khác từ màn hình khóa
+let authSignOutConfirm = false;
+let authSignOutTimer = null;
 $('authSignOutBtn').onclick = async (e) => {
   e.preventDefault();
-  if (confirm('Bạn có chắc chắn muốn đăng xuất tài khoản Google hiện tại?')) {
+  if (!authSignOutConfirm) {
+    authSignOutConfirm = true;
+    $('authSignOutBtn').textContent = 'Xác nhận đăng xuất tài khoản?';
+    authSignOutTimer = setTimeout(() => {
+      authSignOutConfirm = false;
+      $('authSignOutBtn').textContent = 'Đăng nhập tài khoản Google khác';
+    }, 3000);
+  } else {
+    clearTimeout(authSignOutTimer);
     setAccountControls(false);
     await send({ type: 'GOOGLE_SIGN_OUT' });
     location.reload();
@@ -295,11 +510,6 @@ subTabsPopup.forEach(tab => {
   };
 });
 
-// Floating buttons actions
-$('floatAddBtn').onclick = () => {
-  chrome.runtime.openOptionsPage();
-};
-
 // Trình quản lý Password Generator
 function initGenerator() {
   $('genLength').oninput = () => {
@@ -312,46 +522,95 @@ function initGenerator() {
   $('genSymbols').onchange = generatePassword;
   $('genRegenBtn').onclick = generatePassword;
   
-  $('genCopyBtn').onclick = () => {
+  $('genCopyBtn').onclick = async () => {
     const text = $('genPasswordDisplay').value;
-    if (text && text !== 'Chọn ít nhất 1 loại ký tự') {
-      navigator.clipboard.writeText(text);
-      const btn = $('genCopyBtn');
-      btn.textContent = 'Copied!';
-      btn.style.background = '#34c759';
-      setTimeout(() => {
-        btn.textContent = 'Copy';
-      }, 1000);
+    const button = $('genCopyBtn');
+    const status = $('genCopyStatus');
+    clearTimeout(button.resetTimer);
+    status.classList.remove('error');
+    if (!text || !selectedPasswordClasses().length) {
+      status.classList.add('error');
+      status.textContent = 'Hãy chọn ít nhất một nhóm ký tự.';
+      return;
+    }
+    button.disabled = true;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(text);
+      button.textContent = 'Đã chép';
+      status.textContent = 'Mật khẩu đã được sao chép.';
+    } catch {
+      button.textContent = 'Thử lại';
+      status.classList.add('error');
+      status.textContent = 'Chrome không cho phép sao chép. Hãy chọn mật khẩu và sao chép thủ công.';
+    } finally {
+      button.disabled = false;
+      button.resetTimer = setTimeout(() => {
+        button.textContent = 'Sao chép';
+      }, 1400);
     }
   };
 }
 
+const PASSWORD_CHARACTER_CLASSES = [
+  { id: 'genUpper', chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' },
+  { id: 'genLower', chars: 'abcdefghijklmnopqrstuvwxyz' },
+  { id: 'genNumbers', chars: '0123456789' },
+  { id: 'genSymbols', chars: '!@#$%^&*()_+-=[]{}|;:,.<>?' }
+];
+
+function selectedPasswordClasses() {
+  return PASSWORD_CHARACTER_CLASSES
+    .filter(group => $(group.id).checked)
+    .map(group => group.chars);
+}
+
+function cryptoRandomIndex(size) {
+  if (!Number.isInteger(size) || size < 1 || size > 0x100000000) {
+    throw new RangeError('Kích thước tập ký tự không hợp lệ.');
+  }
+  const range = 0x100000000;
+  const limit = Math.floor(range / size) * size;
+  const sample = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(sample);
+  } while (sample[0] >= limit);
+  return sample[0] % size;
+}
+
+function secureShuffle(values) {
+  for (let index = values.length - 1; index > 0; index -= 1) {
+    const swapIndex = cryptoRandomIndex(index + 1);
+    [values[index], values[swapIndex]] = [values[swapIndex], values[index]];
+  }
+  return values;
+}
+
 function generatePassword() {
-  const length = parseInt($('genLength').value);
-  const upper = $('genUpper').checked;
-  const lower = $('genLower').checked;
-  const numbers = $('genNumbers').checked;
-  const symbols = $('genSymbols').checked;
-  
-  let chars = '';
-  if (upper) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  if (lower) chars += 'abcdefghijklmnopqrstuvwxyz';
-  if (numbers) chars += '0123456789';
-  if (symbols) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
-  
-  if (!chars) {
+  const length = Number.parseInt($('genLength').value, 10);
+  const classes = selectedPasswordClasses();
+  const status = $('genCopyStatus');
+  status.textContent = '';
+  status.classList.remove('error');
+
+  if (!classes.length) {
     $('genPasswordDisplay').value = 'Chọn ít nhất 1 loại ký tự';
     return;
   }
-  
-  let password = '';
-  // Đảm bảo mật khẩu sinh ra hoàn toàn ngẫu nhiên cục bộ bằng API Crypto
-  const randomValues = new Uint32Array(length);
-  crypto.getRandomValues(randomValues);
-  for (let i = 0; i < length; i++) {
-    password += chars[randomValues[i] % chars.length];
+
+  if (length < classes.length) {
+    $('genPasswordDisplay').value = '';
+    status.classList.add('error');
+    status.textContent = `Độ dài phải từ ${classes.length} ký tự để chứa đủ các nhóm đã chọn.`;
+    return;
   }
-  $('genPasswordDisplay').value = password;
+
+  const allCharacters = classes.join('');
+  const password = classes.map(characters => characters[cryptoRandomIndex(characters.length)]);
+  while (password.length < length) {
+    password.push(allCharacters[cryptoRandomIndex(allCharacters.length)]);
+  }
+  $('genPasswordDisplay').value = secureShuffle(password).join('');
 }
 
 $('profileButton').onclick = () => {
@@ -360,79 +619,187 @@ $('profileButton').onclick = () => {
 };
 
 async function loadOtp() {
-  const response = await send({ type: 'OTP_LIST' });
-  if (!response.ok) return;
-  otpAccounts = response.otpAccounts || [];
+  const response = await sendReadWithRetry({ type: 'OTP_LIST' }, { attempts: 2, timeoutMs: 4000 });
+  if (!response.ok) {
+    renderLoadFailure($('otpList'), {
+      className: 'otp-load-error',
+      message: response.error || 'Không tải được danh sách OTP.',
+      buttonId: 'otpRetryBtn',
+      onRetry: () => { renderOtpLoading(); void loadOtp(); }
+    });
+    return;
+  }
+  otpAccounts = Array.isArray(response.otpAccounts) ? response.otpAccounts : [];
   await renderOtp();
   if (!otpTimer) otpTimer = setInterval(renderOtp, 1000);
 }
+
+function renderOtpLoading() {
+  $('otpList').innerHTML = `
+    <div class="otp-loading" role="status" aria-live="polite">
+      <span>Đang tải mã OTP…</span>
+      <i></i><i></i><i></i>
+    </div>
+  `;
+}
+
+function showOtpToast(message, tone = '') {
+  const toast = $('otpCopyToast');
+  toast.textContent = message;
+  if (tone) toast.dataset.tone = tone;
+  else delete toast.dataset.tone;
+  toast.classList.add('show');
+  clearTimeout(toast.hideTimer);
+  toast.hideTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
 function stopOtpTimer() { if (otpTimer) clearInterval(otpTimer); otpTimer = null; }
 async function renderOtp() {
   if (activeMainTab !== 'otp' || isOtpDragging) return;
+  const renderGeneration = ++otpRenderGeneration;
   const q = $('searchInput').value.toLowerCase();
   const list = otpAccounts.filter(item => `${item.issuer} ${item.account}`.toLowerCase().includes(q));
   if (!list.length) { $('otpList').innerHTML = '<div style="padding:28px;text-align:center;color:#86868b;font-size:12px">Chưa có mã OTP. Chọn “Thêm mã” để bắt đầu.</div>'; return; }
   const nodes = await Promise.all(list.map(async item => {
-    const card = document.createElement('article'); card.className = 'otp-card'; card.draggable = false; card.dataset.id = item.id;
+    const card = document.createElement('article'); card.className = 'otp-card'; card.draggable = true; card.dataset.id = item.id;
+    if (recentlySavedOtp?.id === item.id) card.classList.add('just-saved');
     const issuer = document.createElement('div'); issuer.className = 'otp-issuer'; issuer.textContent = item.issuer || item.account;
-    const code = document.createElement('div'); code.className = 'otp-code'; code.textContent = await generateTotp(item);
+    const code = document.createElement('div'); code.className = 'otp-code';
+    let otpValid = true;
+    const configuredPeriod = Number(item.period ?? 30);
+    const displayPeriod = Number.isInteger(configuredPeriod) && configuredPeriod >= 5 && configuredPeriod <= 300 ? configuredPeriod : 30;
+    try {
+      const configuredDigits = Number(item.digits ?? 6);
+      const configuredAlgorithm = String(item.algorithm || 'SHA1').toUpperCase().replace('-', '');
+      if (!Number.isInteger(configuredPeriod) || configuredPeriod < 5 || configuredPeriod > 300
+        || ![6, 7, 8].includes(configuredDigits)
+        || !['SHA1', 'SHA256', 'SHA512'].includes(configuredAlgorithm)) {
+        throw new Error('Thông số OTP không hợp lệ.');
+      }
+      code.textContent = await generateTotp(item);
+    } catch {
+      otpValid = false;
+      code.textContent = 'OTP không hợp lệ';
+      code.classList.add('invalid');
+      code.setAttribute('aria-label', 'Mã OTP không hợp lệ. Chọn nút sửa để kiểm tra lại secret và thông số.');
+    }
     const account = document.createElement('div'); account.className = 'otp-account'; account.textContent = item.account || '';
     const side = document.createElement('div'); side.className = 'otp-side';
     const tools = document.createElement('div'); tools.className = 'otp-card-tools';
     const dragHandle = document.createElement('button'); dragHandle.type = 'button'; dragHandle.className = 'otp-icon-btn otp-drag-btn'; dragHandle.title = 'Kéo để đổi thứ tự'; dragHandle.setAttribute('aria-label', `Kéo ${item.issuer || item.account} để đổi thứ tự`); dragHandle.textContent = '⠿';
     const qrButton = document.createElement('button'); qrButton.type = 'button'; qrButton.className = 'otp-icon-btn otp-qr-btn'; qrButton.title = 'Hiển thị QR để quét'; qrButton.setAttribute('aria-label', `Hiển thị QR cho ${item.issuer || item.account}`); qrButton.textContent = '▦';
     const editButton = document.createElement('button'); editButton.type = 'button'; editButton.className = 'otp-icon-btn'; editButton.title = 'Sửa hoặc xóa OTP'; editButton.setAttribute('aria-label', `Sửa ${item.issuer || item.account}`); editButton.textContent = '✎';
+    if (!otpValid) {
+      qrButton.disabled = true;
+      qrButton.title = 'Sửa OTP trước khi tạo mã QR';
+      qrButton.setAttribute('aria-label', 'Không thể tạo QR vì OTP không hợp lệ');
+    }
     tools.append(dragHandle, qrButton, editButton);
-    const timer = document.createElement('span'); timer.className = 'otp-timer'; timer.title = `${item.period || 30} giây mỗi mã`;
+    const timer = document.createElement('span'); timer.className = 'otp-timer'; timer.title = `${displayPeriod} giây mỗi mã`;
     const seconds = document.createElement('span'); timer.append(seconds);
     side.append(tools, timer);
-    const remaining = (item.period || 30) - (Math.floor(Date.now()/1000) % (item.period || 30));
+    const remaining = displayPeriod - (Math.floor(Date.now()/1000) % displayPeriod);
     seconds.textContent = remaining;
     code.classList.toggle('expiring', remaining <= 5);
     timer.classList.toggle('expiring', remaining <= 5);
-    timer.style.setProperty('--timer-angle', `${remaining / (item.period || 30) * 360}deg`);
+    timer.style.setProperty('--timer-angle', `${remaining / displayPeriod * 360}deg`);
     card.append(issuer, code, account, side);
     dragHandle.onclick = event => event.stopPropagation();
-    dragHandle.onpointerdown = () => { card.draggable = true; };
+    dragHandle.onpointerdown = event => {
+      event.stopPropagation();
+      otpDragArmedId = item.id;
+    };
+    card.onpointerdown = event => {
+      if (!event.target.closest('.otp-drag-btn')) otpDragArmedId = null;
+    };
     qrButton.onclick = event => { event.stopPropagation(); showOtpQr(item); };
     editButton.onclick = event => { event.stopPropagation(); openOtpEditor(item); };
     card.onclick = async () => {
-      await navigator.clipboard.writeText(code.textContent);
-      const toast = $('otpCopyToast');
-      toast.classList.add('show');
-      clearTimeout(toast.hideTimer);
-      toast.hideTimer = setTimeout(() => toast.classList.remove('show'), 900);
+      if (!otpValid) {
+        showOtpToast('OTP không hợp lệ — hãy kiểm tra lại', 'error');
+      } else {
+        try {
+          await navigator.clipboard.writeText(code.textContent);
+          showOtpToast('Đã sao chép mã OTP', 'success');
+        } catch {
+          showOtpToast('Không thể sao chép mã OTP', 'error');
+        }
+      }
     };
     card.ondragstart = event => {
-      if (!event.target.closest('.otp-card') || !card.draggable) { event.preventDefault(); return; }
+      if (otpDragArmedId !== item.id) {
+        event.preventDefault();
+        return;
+      }
       isOtpDragging = true;
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', item.id);
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', item.id);
+      }
       requestAnimationFrame(() => card.classList.add('dragging'));
     };
     card.ondragover = event => {
+      if (!isOtpDragging) return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = 'move';
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
       const dragging = $('otpList').querySelector('.dragging');
       if (!dragging || dragging === card) return;
       const rect = card.getBoundingClientRect();
       card.parentNode.insertBefore(dragging, event.clientY < rect.top + rect.height / 2 ? card : card.nextSibling);
     };
+    card.ondrop = event => event.preventDefault();
     card.ondragend = async () => {
+      if (!isOtpDragging) return;
       card.classList.remove('dragging');
-      card.draggable = false;
       const visibleIds = [...$('otpList').querySelectorAll('.otp-card')].map(element => element.dataset.id);
       let cursor = 0;
       const visibleSet = new Set(visibleIds);
       const ids = otpAccounts.map(account => visibleSet.has(account.id) ? visibleIds[cursor++] : account.id);
-      const response = await send({ type: 'OTP_REORDER', ids });
-      if (response.ok) otpAccounts = ids.map(id => otpAccounts.find(account => account.id === id));
-      isOtpDragging = false;
-      await renderOtp();
+      const unchanged = ids.every((id, index) => id === otpAccounts[index]?.id);
+      try {
+        if (!unchanged) {
+          const response = await send({ type: 'OTP_REORDER', ids });
+          if (response.ok) {
+            otpAccounts = Array.isArray(response.otpAccounts)
+              ? response.otpAccounts
+              : ids.map(id => otpAccounts.find(account => account.id === id)).filter(Boolean);
+          } else {
+            showOtpToast(response.error || 'Không thể lưu thứ tự OTP', 'error');
+          }
+        }
+      } finally {
+        otpDragArmedId = null;
+        isOtpDragging = false;
+        await renderOtp();
+      }
     };
     return card;
   }));
+  if (
+    renderGeneration !== otpRenderGeneration
+    || isOtpDragging
+    || activeMainTab !== 'otp'
+  ) return;
   $('otpList').replaceChildren(...nodes);
+  if (recentlySavedOtp && !recentlySavedOtpShown) {
+    const savedCard = [...$('otpList').querySelectorAll('.otp-card')]
+      .find(card => card.dataset.id === recentlySavedOtp.id);
+    if (savedCard) {
+      recentlySavedOtpShown = true;
+      requestAnimationFrame(() => savedCard.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+      const label = recentlySavedOtp.issuer || recentlySavedOtp.account || 'OTP';
+      showOtpToast(
+        recentlySavedOtp.duplicate
+          ? `${label} đã có trong danh sách OTP`
+          : `Đã lưu ${label} vào danh sách OTP`,
+        'success'
+      );
+      setTimeout(() => {
+        recentlySavedOtp = null;
+        savedCard.classList.remove('just-saved');
+      }, 4000);
+    }
+  }
 }
 function showOtpQr(item) {
   const qr = qrcode(0, 'M');
@@ -462,9 +829,18 @@ const otpQrModal = $('otpQrModal');
 if (otpQrModal) otpQrModal.onclick = event => { if (event.target === otpQrModal) otpQrModal.classList.add('hidden'); };
 function resetOtpEditor() {
   ['otpEditId','otpUri','otpIssuer','otpAccount','otpSecret'].forEach(id => $(id).value = '');
+  $('otpAlgorithm').value = 'SHA1';
+  $('otpDigits').value = '6';
+  $('otpPeriod').value = '30';
   $('otpDialogTitle').textContent = 'Thêm mã xác thực';
   $('otpDeleteBtn').classList.remove('visible');
+  $('otpDeleteConfirm').classList.add('hidden');
+  $('otpDeleteCancelBtn').disabled = false;
+  $('otpDeleteConfirmBtn').disabled = false;
+  $('otpDeleteConfirmBtn').textContent = 'Đồng ý xóa';
+  $('otpFormStatus').textContent = '';
   $('otpFormError').textContent = '';
+  setOtpEditorBusy(false);
 }
 function openOtpEditor(item = null) {
   resetOtpEditor();
@@ -473,79 +849,366 @@ function openOtpEditor(item = null) {
     $('otpIssuer').value = item.issuer || '';
     $('otpAccount').value = item.account || '';
     $('otpSecret').value = item.secret || '';
+    $('otpAlgorithm').value = String(item.algorithm || 'SHA1').toUpperCase().replace('-', '');
+    $('otpDigits').value = String(item.digits || 6);
+    $('otpPeriod').value = String(item.period || 30);
+    try {
+      $('otpUri').value = serializeOtpAuthUri(item);
+    } catch {
+      $('otpUri').value = '';
+    }
     $('otpDialogTitle').textContent = 'Sửa mã xác thực';
     $('otpDeleteBtn').classList.add('visible');
   }
   $('otpModal').classList.remove('hidden');
 }
-async function openCameraScanner() {
-  openOtpEditor();
-  $('otpDialogTitle').textContent = 'Quét QR thêm mã OTP';
-  await startOtpCamera();
+function closeOtpModal(){
+  resetOtpEditor();
+  $('otpModal').classList.add('hidden');
+  if (activeMainTab === 'otp' && !otpTimer) {
+    otpTimer = setInterval(renderOtp, 1000);
+    void renderOtp();
+  }
 }
-function stopCamera(){ if(cameraStream) cameraStream.getTracks().forEach(track=>track.stop()); cameraStream=null; $('otpCamera').classList.add('hidden'); }
-function closeOtpModal(){ stopCamera(); resetOtpEditor(); $('otpModal').classList.add('hidden'); }
 const headerScanButton = $('headerScanButton');
-if (headerScanButton) headerScanButton.onclick = openCameraScanner;
+function setHeaderScanMenu(open) {
+  $('headerScanMenu').classList.toggle('hidden', !open);
+  headerScanButton.setAttribute('aria-expanded', String(open));
+}
+if (headerScanButton) headerScanButton.onclick = event => {
+  event.stopPropagation();
+  setHeaderScanMenu($('headerScanMenu').classList.contains('hidden'));
+};
+$('scanScreenMenuBtn').onclick = () => {
+  setHeaderScanMenu(false);
+  void scanVisibleTabForOtp($('scanScreenMenuBtn'));
+};
+$('scanImportMenuBtn').onclick = () => {
+  setHeaderScanMenu(false);
+  $('headerQrFile').click();
+};
+document.addEventListener('click', event => {
+  if (!event.target.closest('.scan-menu-wrap')) setHeaderScanMenu(false);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') setHeaderScanMenu(false);
+});
 const otpCancelButton = $('otpCancelBtn');
 if (otpCancelButton) otpCancelButton.onclick = closeOtpModal;
 const otpSaveButton = $('otpSaveBtn');
-if (otpSaveButton) otpSaveButton.onclick=async()=>{const id=$('otpEditId').value;const uri=$('otpUri').value.trim();const r=await send(uri?{type:'OTP_SAVE',id,uri}:{type:'OTP_SAVE',id,issuer:$('otpIssuer').value,account:$('otpAccount').value,secret:$('otpSecret').value});if(!r.ok)return $('otpFormError').textContent=r.error;closeOtpModal();await loadOtp();};
+function setOtpEditorBusy(busy) {
+  otpSaveInFlight = busy;
+  const saveButton = $('otpSaveBtn');
+  saveButton.disabled = busy;
+  saveButton.setAttribute('aria-busy', String(busy));
+  saveButton.textContent = busy ? 'Đang lưu…' : 'Lưu OTP';
+  ['otpCancelBtn', 'otpCameraBtn', 'otpImageBtn', 'otpDeleteBtn'].forEach(id => {
+    $(id).disabled = busy;
+  });
+}
+if (otpSaveButton) otpSaveButton.onclick = async () => {
+  if (otpSaveInFlight) return;
+  const uri = $('otpUri').value.trim();
+  if (uri && !applyOtpUriToEditor(uri, true)) return;
+
+  const payload = {
+    type: 'OTP_SAVE',
+    id: $('otpEditId').value,
+    issuer: $('otpIssuer').value.trim(),
+    account: $('otpAccount').value.trim(),
+    secret: $('otpSecret').value.trim(),
+    algorithm: $('otpAlgorithm').value,
+    digits: Number($('otpDigits').value),
+    period: Number($('otpPeriod').value)
+  };
+  setOtpEditorBusy(true);
+  $('otpFormError').textContent = '';
+  $('otpFormStatus').textContent = 'Đang mã hóa và lưu an toàn trên máy…';
+  const response = await send(payload);
+  if (!response.ok) {
+    setOtpEditorBusy(false);
+    $('otpFormStatus').textContent = '';
+    $('otpFormError').textContent = response.error;
+    return;
+  }
+
+  if (Array.isArray(response.otpAccounts)) {
+    otpAccounts = response.otpAccounts;
+  } else {
+    const refreshed = await send({ type: 'OTP_LIST' });
+    if (refreshed.ok) otpAccounts = refreshed.otpAccounts || [];
+  }
+
+  const syncState = String(response.syncStatus?.state || '').toLowerCase();
+  closeOtpModal();
+  if (syncState && syncState !== 'synced') {
+    showOtpToast('Đã lưu OTP · đang tự đồng bộ Firebase', 'success');
+  } else {
+    showOtpToast(
+      syncState === 'synced' ? 'Đã lưu OTP và đồng bộ Firebase' : 'Đã lưu OTP',
+      'success'
+    );
+  }
+  void renderOtp();
+  if (!otpTimer) otpTimer = setInterval(renderOtp, 1000);
+};
 const otpDeleteButton = $('otpDeleteBtn');
-if (otpDeleteButton) otpDeleteButton.onclick=async()=>{const id=$('otpEditId').value;if(!id||!confirm('Xóa mã OTP này? Hành động không thể hoàn tác.'))return;const r=await send({type:'OTP_DELETE',id});if(!r.ok)return $('otpFormError').textContent=r.error;closeOtpModal();await loadOtp();};
-async function acceptQr(value){try{const parsed=parseOtpAuthUri(value);$('otpUri').value=value;$('otpIssuer').value=parsed.issuer;$('otpAccount').value=parsed.account;$('otpSecret').value=parsed.secret;stopCamera();}catch(error){$('otpFormError').textContent=error.message;}}
-function decodeQrFromSource(source) {
-  const width = source.videoWidth || source.width;
-  const height = source.videoHeight || source.height;
+if (otpDeleteButton) otpDeleteButton.onclick = () => {
+  const id = $('otpEditId').value;
+  if (!id) return;
+  otpDeleteButton.classList.remove('visible');
+  $('otpDeleteConfirm').classList.remove('hidden');
+};
+$('otpDeleteCancelBtn').onclick = () => {
+  $('otpDeleteConfirm').classList.add('hidden');
+  if ($('otpEditId').value) otpDeleteButton.classList.add('visible');
+};
+$('otpDeleteConfirmBtn').onclick = async () => {
+  const id = $('otpEditId').value;
+  if (!id) return;
+  const previousAccounts = otpAccounts;
+  const deleteButton = $('otpDeleteConfirmBtn');
+  deleteButton.disabled = true;
+  $('otpDeleteCancelBtn').disabled = true;
+  deleteButton.textContent = 'Đang xóa…';
+
+  otpAccounts = otpAccounts.filter(item => item.id !== id);
+  closeOtpModal();
+  void renderOtp();
+  showOtpToast('Đã xóa OTP trên máy', 'success');
+
+  const response = await send({ type: 'OTP_DELETE', id });
+  if (!response.ok) {
+    otpAccounts = previousAccounts;
+    void renderOtp();
+    showOtpToast(response.error || 'Không xóa được mã OTP', 'error');
+    return;
+  }
+  if (Array.isArray(response.otpAccounts)) {
+    otpAccounts = response.otpAccounts;
+    void renderOtp();
+  }
+  const syncState = String(response.syncStatus?.state || '').toLowerCase();
+  if (syncState && syncState !== 'synced') {
+    showOtpToast('Đã xóa OTP · đang tự đồng bộ Firebase', 'success');
+  } else {
+    showOtpToast('Đã xóa mã OTP', 'success');
+  }
+};
+function applyOtpUriToEditor(value, showError = false) {
+  try {
+    const parsed = parseOtpAuthUri(value);
+    applyingOtpUri = true;
+    $('otpUri').value = value;
+    $('otpIssuer').value = parsed.issuer;
+    $('otpAccount').value = parsed.account;
+    $('otpSecret').value = parsed.secret;
+    $('otpAlgorithm').value = parsed.algorithm;
+    $('otpDigits').value = String(parsed.digits);
+    $('otpPeriod').value = String(parsed.period);
+    $('otpFormError').textContent = '';
+    return true;
+  } catch (error) {
+    if (showError) $('otpFormError').textContent = error.message;
+    return false;
+  } finally {
+    applyingOtpUri = false;
+  }
+}
+
+$('otpUri').addEventListener('input', () => {
+  const value = $('otpUri').value.trim();
+  if (value) applyOtpUriToEditor(value);
+});
+
+['otpIssuer', 'otpAccount', 'otpSecret', 'otpAlgorithm', 'otpDigits', 'otpPeriod'].forEach(id => {
+  $(id).addEventListener(id === 'otpAlgorithm' || id === 'otpDigits' ? 'change' : 'input', () => {
+    if (!applyingOtpUri) $('otpUri').value = '';
+  });
+});
+
+function acceptQr(value){
+  if (applyOtpUriToEditor(value, true)) {
+    $('otpDialogTitle').textContent = 'Đã quét được mã OTP';
+    $('otpFormStatus').textContent = 'Đã nhận diện QR. Kiểm tra thông tin rồi bấm Lưu OTP.';
+    showOtpToast('Đã nhận diện mã QR', 'success');
+    return true;
+  }
+  return false;
+}
+function makeQrImageData(source, maxWidth = 1200) {
+  const width = source.videoWidth || source.naturalWidth || source.width;
+  const height = source.videoHeight || source.naturalHeight || source.height;
   if (!width || !height) return null;
-  const maxWidth = 720;
   const scale = Math.min(1, maxWidth / width);
+  const drawnWidth = Math.max(1, Math.round(width * scale));
+  const drawnHeight = Math.max(1, Math.round(height * scale));
+  const padding = Math.max(12, Math.round(Math.min(drawnWidth, drawnHeight) * 0.06));
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
+  canvas.width = drawnWidth + padding * 2;
+  canvas.height = drawnHeight + padding * 2;
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  context.drawImage(source, 0, 0, canvas.width, canvas.height);
-  const image = context.getImageData(0, 0, canvas.width, canvas.height);
-  return jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(source, padding, padding, drawnWidth, drawnHeight);
+  return context.getImageData(0, 0, canvas.width, canvas.height);
+}
+function makeHighContrastQrImage(image) {
+  const output = new Uint8ClampedArray(image.data);
+  let darkest = 255;
+  let lightest = 0;
+  for (let index = 0; index < output.length; index += 4) {
+    const luminance = output[index] * .299 + output[index + 1] * .587 + output[index + 2] * .114;
+    darkest = Math.min(darkest, luminance);
+    lightest = Math.max(lightest, luminance);
+  }
+  const threshold = darkest + (lightest - darkest) * .56;
+  for (let index = 0; index < output.length; index += 4) {
+    const luminance = output[index] * .299 + output[index + 1] * .587 + output[index + 2] * .114;
+    const value = luminance < threshold ? 0 : 255;
+    output[index] = value;
+    output[index + 1] = value;
+    output[index + 2] = value;
+    output[index + 3] = 255;
+  }
+  return new ImageData(output, image.width, image.height);
+}
+async function decodeQrFromSource(source, maxWidth = 1200) {
+  if (typeof jsQR !== 'function') throw new Error('Bộ nhận diện QR chưa sẵn sàng.');
+  const image = makeQrImageData(source, maxWidth);
+  if (!image) return null;
+  let result = jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+  if (result?.data) return result;
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  const contrasted = makeHighContrastQrImage(image);
+  result = jsQR(contrasted.data, contrasted.width, contrasted.height, {
+    inversionAttempts: 'dontInvert'
+  });
+  return result;
 }
 $('otpImageBtn').onclick=()=>$('otpQrFile').click();
 $('otpQrFile').onchange = async event => {
+  let bitmap;
   try {
     const file = event.target.files[0];
     if (!file) return;
-    const bitmap = await createImageBitmap(file);
-    const result = decodeQrFromSource(bitmap);
-    bitmap.close();
+    $('otpFormStatus').textContent = 'Đang nhận diện ảnh QR…';
+    bitmap = await createImageBitmap(file);
+    const result = await decodeQrFromSource(bitmap);
     if (result?.data) acceptQr(result.data);
-    else $('otpFormError').textContent = 'Không tìm thấy QR trong ảnh. Hãy chọn ảnh rõ và không bị cắt.';
-  } catch (error) { $('otpFormError').textContent = `Không đọc được ảnh QR: ${error.message}`; }
-  finally { event.target.value = ''; }
-};
-async function startOtpCamera() {
-  try {
-    $('otpFormError').textContent = '';
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-    const video = $('otpCamera');
-    video.srcObject = cameraStream;
-    video.classList.remove('hidden');
-    await video.play();
-    const scan = () => {
-      if (!cameraStream) return;
-      const result = decodeQrFromSource(video);
-      if (result?.data) return acceptQr(result.data);
-      requestAnimationFrame(scan);
-    };
-    requestAnimationFrame(scan);
+    else {
+      $('otpFormStatus').textContent = '';
+      $('otpFormError').textContent = 'Không tìm thấy QR trong ảnh. Hãy chọn ảnh rõ và không bị cắt.';
+    }
   } catch (error) {
-    stopCamera();
-    const denied = error.name === 'NotAllowedError';
-    $('otpFormError').textContent = denied ? 'Chrome đang chặn camera. Hãy cho phép Camera trong quyền của extension rồi thử lại.' : `Không mở được camera: ${error.message}`;
+    $('otpFormStatus').textContent = '';
+    $('otpFormError').textContent = `Không đọc được ảnh QR: ${error.message}`;
+  }
+  finally {
+    bitmap?.close();
+    event.target.value = '';
+  }
+};
+
+async function saveImportedQr(uri) {
+  const response = await send({ type: 'SAVE_QR_URI', uri });
+  if (!response.ok) throw new Error(response.error || 'Không tự lưu được mã OTP.');
+  activeMainTab = 'otp';
+  mainTabs.forEach(tab => $(tab.id).classList.toggle('active', tab.key === 'otp'));
+  if (Array.isArray(response.otpAccounts)) otpAccounts = response.otpAccounts;
+  render();
+  showOtpToast(
+    response.duplicate ? 'Mã OTP này đã có trong Vault' : 'Đã quét xong và tự lưu OTP',
+    'success'
+  );
+}
+
+$('headerQrFile').onchange = async event => {
+  let bitmap;
+  try {
+    const file = event.target.files[0];
+    if (!file) return;
+    showOtpToast('Đang nhận diện ảnh QR…');
+    bitmap = await createImageBitmap(file);
+    const result = await decodeQrFromSource(bitmap);
+    if (!result?.data) {
+      throw new Error('Không nhận diện được QR trong ảnh đã chọn.');
+    }
+    await saveImportedQr(result.data);
+  } catch (error) {
+    showOtpToast(error?.message || 'Không import được ảnh QR.', 'error');
+  } finally {
+    bitmap?.close();
+    event.target.value = '';
+  }
+};
+
+async function scanVisibleTabForOtp(sourceButton = $('otpCameraBtn')) {
+  if (screenScanInFlight || otpSaveInFlight) return;
+  screenScanInFlight = true;
+  const scanButton = sourceButton;
+  const originalLabel = scanButton.textContent;
+  scanButton.disabled = true;
+  scanButton.textContent = 'Đang mở…';
+  $('otpFormError').textContent = '';
+  $('otpFormStatus').textContent = 'Đang mở công cụ khoanh vùng trên trang…';
+
+  try {
+    const page = await activePageContext();
+    if (!page) {
+      throw new Error('Không xác định được trang cần quét.');
+    }
+    if (typeof chrome?.scripting?.executeScript !== 'function') {
+      throw new Error('Trình duyệt không hỗ trợ công cụ khoanh vùng QR.');
+    }
+    await chrome.scripting.executeScript({
+      target: { tabId: page.tabId },
+      files: ['src/vendor/jsqr.js', 'src/content/qr-selector.js']
+    });
+    window.close();
+  } catch (error) {
+    $('otpFormStatus').textContent = '';
+    $('otpFormError').textContent = /Cannot access|không thể truy cập/i.test(String(error?.message || ''))
+      ? 'Trình duyệt không cho phép khoanh vùng trên trang hệ thống này.'
+      : error?.message || 'Không thể mở công cụ khoanh vùng QR.';
+  } finally {
+    screenScanInFlight = false;
+    if (!otpSaveInFlight) {
+      scanButton.disabled = false;
+      scanButton.textContent = originalLabel;
+    }
   }
 }
 const otpCameraButton = $('otpCameraBtn');
-if (otpCameraButton) otpCameraButton.onclick = startOtpCamera;
+if (otpCameraButton) otpCameraButton.onclick = scanVisibleTabForOtp;
 const advancedSettingsButton = $('advancedSettingsBtn');
 if (advancedSettingsButton) advancedSettingsButton.onclick = async () => { await send({ type: 'OPEN_OPTIONS' }); window.close(); };
-window.addEventListener('unload',()=>{stopOtpTimer();stopCamera();});
+window.addEventListener('unload',()=>{stopOtpTimer();});
 
-init();
+async function bootPopup() {
+  try {
+    const requestedTab = await chrome.storage.session.get([
+      OPEN_OTP_TAB_SESSION_KEY,
+      LAST_QR_SAVED_SESSION_KEY
+    ]);
+    recentlySavedOtp = requestedTab[LAST_QR_SAVED_SESSION_KEY] || null;
+    if (requestedTab[OPEN_OTP_TAB_SESSION_KEY]) {
+      await chrome.storage.session.remove([
+        OPEN_OTP_TAB_SESSION_KEY,
+        LAST_QR_SAVED_SESSION_KEY
+      ]);
+      activeMainTab = 'otp';
+      mainTabs.forEach(tab => $(tab.id).classList.toggle('active', tab.key === 'otp'));
+    }
+    await init();
+  } catch (error) {
+    $('authView').classList.add('hidden');
+    $('vaultView').classList.add('hidden');
+    $('googleView').classList.remove('hidden');
+    $('googleError').textContent = error?.message || 'Không mở được Aegis Vault. Hãy đóng rồi mở lại extension.';
+  } finally {
+    $('bootView').classList.add('hidden');
+  }
+}
+
+void bootPopup();
