@@ -10,22 +10,27 @@ test('i18n dictionary has matching keys for vi and en', () => {
   assert.ok(viKeys.length > 20, 'Dictionary should contain all essential UI keys');
 });
 
-test('t() returns correct translation for selected language', async () => {
-  await setLanguage('vi');
-  assert.equal(t('searchPlaceholder'), 'Tìm kiếm Aegis Vault...');
-  assert.equal(t('tabLogins'), '🔑 Logins');
-  assert.equal(t('topDonateBtn'), '☕ Ủng hộ tác giả');
+test('default language is English', async () => {
+  const lang = await getLanguage();
+  assert.equal(lang, 'en', 'Default language must be English (en)');
+});
 
+test('t() returns correct translation for selected language', async () => {
   await setLanguage('en');
   assert.equal(t('searchPlaceholder'), 'Search Aegis Vault...');
   assert.equal(t('tabLogins'), '🔑 Logins');
   assert.equal(t('topDonateBtn'), '☕ Support Author');
 
+  await setLanguage('vi');
+  assert.equal(t('searchPlaceholder'), 'Tìm kiếm Aegis Vault...');
+  assert.equal(t('tabLogins'), '🔑 Logins');
+  assert.equal(t('topDonateBtn'), '☕ Ủng hộ tác giả');
+
   // Fallback to key or fallback string if missing key
   assert.equal(t('nonExistentKey', 'Default Fallback'), 'Default Fallback');
 
-  // Reset to default vi
-  await setLanguage('vi');
+  // Reset to default en
+  await setLanguage('en');
 });
 
 test('translateDocument updates DOM elements correctly', async () => {

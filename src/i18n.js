@@ -206,19 +206,21 @@ export const DICTIONARY = {
   }
 };
 
-let currentLang = 'vi';
+let currentLang = 'en';
 
 /**
- * Get current language setting.
+ * Get current language setting. Defaults to English ('en') if not explicitly set.
  */
 export async function getLanguage() {
   try {
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       const res = await chrome.storage.local.get(['aegisLanguage']);
-      currentLang = res.aegisLanguage === 'en' ? 'en' : 'vi';
+      currentLang = res.aegisLanguage === 'vi' ? 'vi' : 'en';
+    } else {
+      currentLang = 'en';
     }
   } catch {
-    currentLang = 'vi';
+    currentLang = 'en';
   }
   return currentLang;
 }
@@ -227,7 +229,7 @@ export async function getLanguage() {
  * Set current language setting.
  */
 export async function setLanguage(lang) {
-  currentLang = lang === 'en' ? 'en' : 'vi';
+  currentLang = lang === 'vi' ? 'vi' : 'en';
   try {
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       await chrome.storage.local.set({ aegisLanguage: currentLang });
@@ -242,8 +244,8 @@ export async function setLanguage(lang) {
  * Get translated text for a key.
  */
 export function t(key, fallback = '') {
-  const dict = DICTIONARY[currentLang] || DICTIONARY.vi;
-  return dict[key] !== undefined ? dict[key] : (DICTIONARY.vi[key] || fallback || key);
+  const dict = DICTIONARY[currentLang] || DICTIONARY.en;
+  return dict[key] !== undefined ? dict[key] : (DICTIONARY.en[key] || fallback || key);
 }
 
 /**
@@ -251,7 +253,7 @@ export function t(key, fallback = '') {
  */
 export function translateDocument(doc = document) {
   const lang = currentLang;
-  const dict = DICTIONARY[lang] || DICTIONARY.vi;
+  const dict = DICTIONARY[lang] || DICTIONARY.en;
 
   doc.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.dataset.i18n;
@@ -285,7 +287,7 @@ export async function i18nInit(onLangChange = null) {
   if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.aegisLanguage) {
-        currentLang = changes.aegisLanguage.newValue === 'en' ? 'en' : 'vi';
+        currentLang = changes.aegisLanguage.newValue === 'vi' ? 'vi' : 'en';
         translateDocument();
         if (typeof onLangChange === 'function') {
           onLangChange(currentLang);
