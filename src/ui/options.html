@@ -231,6 +231,225 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 @media (max-width: 850px) { .security-hero { grid-template-columns: 1fr; } .security-stats { grid-template-columns: repeat(2,1fr); } .security-table th:nth-child(2), .security-table td:nth-child(2) { display:none; } }
 @media (max-width: 850px) { .backup-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .config-actions { align-items: stretch; flex-direction: column; } .config-actions button { width: 100%; } .field-stack { width: 100%; min-width: 0; } .file-picker { align-items: stretch; flex-direction: column; } }
+
+/* Top bar donation button */
+.top-donate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+  color: #b45309;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(245, 158, 11, 0.12);
+  white-space: nowrap;
+}
+.top-donate-btn:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border-color: rgba(245, 158, 11, 0.55);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.22);
+}
+
+/* Donate Modal Overlay & Box */
+.donate-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(5px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+.donate-modal-overlay.hidden {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+.donate-modal-card {
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+  width: 100%;
+  max-width: 620px;
+  padding: 28px;
+  position: relative;
+  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.donate-modal-close {
+  position: absolute;
+  top: 18px; right: 18px;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--apple-line);
+  background: #f5f5f7;
+  color: var(--apple-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 0.15s;
+}
+.donate-modal-close:hover {
+  background: #e5e5ea;
+  color: var(--apple-text);
+}
+.donate-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 22px;
+  padding-right: 36px;
+}
+.donate-icon {
+  width: 46px; height: 46px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #d97706;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  flex: 0 0 46px;
+}
+.donate-header h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--apple-text);
+}
+.donate-header p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--apple-muted);
+}
+.donate-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 580px) {
+  .donate-grid { grid-template-columns: 1fr; }
+}
+.donate-card {
+  border: 1px solid var(--apple-line);
+  border-radius: 16px;
+  padding: 18px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.donate-card:hover {
+  border-color: rgba(0, 113, 227, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
+}
+.donate-card-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.donate-card-badge.btc {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #ffedd5;
+}
+.donate-card-badge.usdt {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #d1fae5;
+}
+.donate-qr-wrap {
+  width: 170px;
+  height: 170px;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 8px;
+  border: 1px solid var(--apple-line);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  margin-bottom: 12px;
+  display: grid;
+  place-items: center;
+}
+.donate-qr-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.donate-info {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.donate-meta {
+  font-size: 11px;
+  color: var(--apple-muted);
+  text-align: left;
+  background: #ffffff;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--apple-line);
+}
+.donate-meta span {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--apple-muted);
+  margin-bottom: 2px;
+}
+.donate-meta strong, .donate-meta code {
+  color: var(--apple-text);
+  font-size: 11px;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, SF Pro Text, monospace;
+}
+.donate-copy-btn {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--apple-line);
+  background: #ffffff;
+  color: var(--apple-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.donate-copy-btn:hover {
+  background: var(--apple-accent-light);
+  color: var(--apple-accent);
+  border-color: rgba(0, 113, 227, 0.3);
+}
+.donate-copy-btn.copied {
+  background: var(--apple-green-bg);
+  color: var(--apple-green);
+  border-color: rgba(52, 199, 89, 0.3);
+}
 </style></head><body>
 <div class="modal-overlay" id="overlay"></div>
 <aside class="sidebar">
@@ -240,6 +459,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     <li class="nav-item" id="menuSecurity">🛡️ Security Center</li>
     <li class="nav-item" id="menuIdentity">👤 Identity</li>
     <li class="nav-item" id="menuSettings">⚙️ Settings</li>
+    <li class="nav-item" id="menuDonate">☕ Ủng hộ tác giả</li>
   </ul>
   <div class="sidebar-bottom">
     <div class="promo-box">
@@ -256,6 +476,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
       <input type="search" id="dashboardSearch" placeholder="Search Aegis Vault">
     </div>
     <div class="top-right">
+      <button class="top-donate-btn" id="topDonateBtn" title="Ủng hộ tác giả Aegis Vault">☕ Ủng hộ tác giả</button>
       <span class="top-help" title="Trợ giúp">❓</span>
       <div class="top-user hidden" id="topUserBtn">
         <div class="top-avatar" id="googleAvatar">?</div>
@@ -513,6 +734,57 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     </div>
     
     <button class="delete-btn" id="deleteBtn" type="button">Xóa tài khoản này</button>
+  </div>
+</div>
+
+<!-- Donate Modal -->
+<div class="donate-modal-overlay hidden" id="donateModal">
+  <div class="donate-modal-card">
+    <button class="donate-modal-close" id="closeDonateModal" title="Đóng">✕</button>
+    <div class="donate-header">
+      <div class="donate-icon">☕</div>
+      <div>
+        <h3>Ủng hộ tác giả (Donate)</h3>
+        <p>Cảm ơn bạn đã tin tưởng và sử dụng Aegis Vault! Mọi sự hỗ trợ của bạn là nguồn động lực rất lớn để tác giả duy trì và tiếp tục phát triển tiện ích.</p>
+      </div>
+    </div>
+    <div class="donate-grid">
+      <div class="donate-card">
+        <span class="donate-card-badge btc">Bitcoin (BTC)</span>
+        <div class="donate-qr-wrap">
+          <img src="donate-btc.png" alt="BTC QR Code" class="donate-qr-img">
+        </div>
+        <div class="donate-info">
+          <div class="donate-meta">
+            <span>Mạng lưới</span>
+            <strong>BTC</strong>
+          </div>
+          <div class="donate-meta">
+            <span>Địa chỉ ví</span>
+            <code id="btcAddr">14enMJBiXgk7jLc187qXB5quBBSfsYuVG</code>
+          </div>
+          <button class="donate-copy-btn" id="copyBtcBtn">📋 Sao chép địa chỉ BTC</button>
+        </div>
+      </div>
+
+      <div class="donate-card">
+        <span class="donate-card-badge usdt">USDT (BEP20 / BSC)</span>
+        <div class="donate-qr-wrap">
+          <img src="donate-usdt.png" alt="USDT BSC QR Code" class="donate-qr-img">
+        </div>
+        <div class="donate-info">
+          <div class="donate-meta">
+            <span>Mạng lưới</span>
+            <strong>BSC (BEP20)</strong>
+          </div>
+          <div class="donate-meta">
+            <span>Địa chỉ ví</span>
+            <code id="usdtAddr">0x1b1817cc4f6eb49adb051c25d0f82e77f66c8514</code>
+          </div>
+          <button class="donate-copy-btn" id="copyUsdtBtn">📋 Sao chép địa chỉ USDT</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

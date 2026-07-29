@@ -851,6 +851,74 @@ function initPasswordToggles() {
   });
 }
 
+function openDonateModal() {
+  $('donateModal')?.classList.remove('hidden');
+}
+
+function closeDonateModal() {
+  $('donateModal')?.classList.add('hidden');
+}
+
+if ($('topDonateBtn')) {
+  $('topDonateBtn').onclick = (e) => {
+    e.stopPropagation();
+    openDonateModal();
+  };
+}
+
+if ($('menuDonate')) {
+  $('menuDonate').onclick = (e) => {
+    e.stopPropagation();
+    openDonateModal();
+  };
+}
+
+if ($('closeDonateModal')) {
+  $('closeDonateModal').onclick = closeDonateModal;
+}
+
+if ($('donateModal')) {
+  $('donateModal').onclick = (e) => {
+    if (e.target === $('donateModal')) {
+      closeDonateModal();
+    }
+  };
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('donateModal') && !$('donateModal').classList.contains('hidden')) {
+    closeDonateModal();
+  }
+});
+
+async function copyToClipboard(text, btn, successLabel) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const originalText = btn.innerHTML;
+    btn.innerHTML = successLabel;
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.innerHTML = originalText;
+      btn.classList.remove('copied');
+    }, 2000);
+  } catch (err) {
+    console.error('Clipboard copy failed:', err);
+  }
+}
+
+if ($('copyBtcBtn')) {
+  $('copyBtcBtn').onclick = () => {
+    copyToClipboard('14enMJBiXgk7jLc187qXB5quBBSfsYuVG', $('copyBtcBtn'), '✓ Đã sao chép BTC!');
+  };
+}
+
+if ($('copyUsdtBtn')) {
+  $('copyUsdtBtn').onclick = () => {
+    copyToClipboard('0x1b1817cc4f6eb49adb051c25d0f82e77f66c8514', $('copyUsdtBtn'), '✓ Đã sao chép USDT!');
+  };
+}
+
 init();
 initPasswordToggles();
+
 
