@@ -81,31 +81,7 @@ async function activePageContext() {
 
 function updateSyncWarningBanner(syncStatus) {
   const banner = $('syncWarningBanner');
-  const text = $('syncWarningText');
-  const actionBtn = $('syncWarningActionBtn');
-  if (!banner || !text || !actionBtn) return;
-
-  const state = String(syncStatus?.state || '').toLowerCase();
-  if (['conflict', 'staged', 'error'].includes(state)) {
-    banner.classList.remove('hidden');
-    let message = syncStatus.error || t('syncErrorMsg', 'Firebase connection or sync error.');
-    if (state === 'conflict' || state === 'staged') {
-      message = t('firebaseConflictMsg', 'Data conflict with Firebase.');
-      actionBtn.textContent = t('resolveBtn', 'Resolve');
-      actionBtn.onclick = async () => {
-        await send({ type: 'OPEN_OPTIONS' });
-        window.close();
-      };
-    } else {
-      actionBtn.textContent = t('detailsBtn', 'Details');
-      actionBtn.onclick = () => {
-        alert(`${t('syncErrorDetails', 'Sync error details')}:\n${syncStatus.error || ''}`);
-      };
-    }
-    text.textContent = `⚠️ ${message}`;
-  } else {
-    banner.classList.add('hidden');
-  }
+  if (banner) banner.classList.add('hidden');
 }
 
 function setAccountControls(isSignedIn) {
