@@ -59,4 +59,9 @@ npm run check
 
 Gói portable được tạo tại `dist/aegis-vault.zip`. Xem thêm [INSTALL.md](INSTALL.md) để cài trên máy khác và giữ ổn định Extension ID cho Google OAuth.
 
+## Chính sách quyền riêng tư (Privacy Policy)
+
+Xem chi tiết cam kết bảo mật và quyền riêng tư tại [PRIVACY_POLICY.md](PRIVACY_POLICY.md).
+
+
 > Đây vẫn là phần mềm tự quản lý mật khẩu. Hãy kiểm thử kỹ trong môi trường của bạn và giữ backup trước khi dùng làm nơi lưu duy nhất cho dữ liệu quan trọng.
