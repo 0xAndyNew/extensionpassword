@@ -225,31 +225,31 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 <!-- Auth View (Lock screen) -->
 <section id="authView" class="auth-panel hidden">
   <span class="eyebrow" style="font-size:9.5px;color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:700">ZERO-KNOWLEDGE VAULT</span>
-  <h2 id="authTitle" style="font-size:17px;margin:10px 0 4px;font-weight:700;letter-spacing:-0.01em">Mở khóa kho bảo mật</h2>
-  <p id="authHint" style="font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.4">Nhập mật khẩu chính để tiếp tục.</p>
-  <label for="masterPassword">Mật khẩu chính</label>
+  <h2 id="authTitle" style="font-size:17px;margin:10px 0 4px;font-weight:700;letter-spacing:-0.01em" data-i18n="unlockVaultHeader">Mở khóa kho bảo mật</h2>
+  <p id="authHint" style="font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.4" data-i18n="enterMasterPwd">Nhập mật khẩu chính để tiếp tục.</p>
+  <label for="masterPassword" data-i18n="masterPwdLabel">Mật khẩu chính</label>
   <div class="pwd-input-wrap">
     <input id="masterPassword" type="password" autocomplete="current-password">
     <button type="button" class="toggle-pwd-btn" data-target="masterPassword" title="Hiện/Ẩn mật khẩu">👁️</button>
   </div>
   <div id="confirmMasterGroup" class="hidden">
-    <label for="confirmMasterPassword">Nhập lại mật khẩu chính</label>
+    <label for="confirmMasterPassword" data-i18n="confirmMasterPwdLabel">Nhập lại mật khẩu chính</label>
     <div class="pwd-input-wrap">
       <input id="confirmMasterPassword" type="password" autocomplete="new-password">
       <button type="button" class="toggle-pwd-btn" data-target="confirmMasterPassword" title="Hiện/Ẩn mật khẩu">👁️</button>
     </div>
   </div>
-  <button id="authButton" class="primary" style="margin-top:4px;">Mở khóa →</button>
+  <button id="authButton" class="primary" style="margin-top:4px;" data-i18n="unlockBtnText">Mở khóa →</button>
   <p id="error" class="error"></p>
-  <a id="authSignOutBtn" href="#" style="display:block; text-align:center; margin-top:14px; font-size:12px; color:var(--accent); text-decoration:none; font-weight:500;">Đăng nhập tài khoản Google khác</a>
+  <a id="authSignOutBtn" href="#" style="display:block; text-align:center; margin-top:14px; font-size:12px; color:var(--accent); text-decoration:none; font-weight:500;" data-i18n="signInDiffGoogle">Đăng nhập tài khoản Google khác</a>
 </section>
 
 <!-- Google Auth screen -->
 <section id="googleView" class="auth-panel hidden">
   <span class="eyebrow" style="font-size:9.5px;color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:700">GOOGLE IDENTITY</span>
-  <h2 style="font-size:17px;margin:10px 0 4px;font-weight:700;letter-spacing:-0.01em">Đăng nhập để quản lý</h2>
-  <p style="font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.4">Google chỉ xác minh danh tính. Dữ liệu vẫn được mã hóa hoàn toàn cục bộ.</p>
-  <button id="googleButton" class="primary">Tiếp tục với Google →</button>
+  <h2 style="font-size:17px;margin:10px 0 4px;font-weight:700;letter-spacing:-0.01em" data-i18n="signInToManageTitle">Đăng nhập để quản lý</h2>
+  <p style="font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.4" data-i18n="signInToManageDesc">Google chỉ xác minh danh tính. Dữ liệu vẫn được mã hóa hoàn toàn cục bộ.</p>
+  <button id="googleButton" class="primary" data-i18n="continueWithGoogle">Tiếp tục với Google →</button>
   <p id="googleError" class="error"></p>
 </section>
 

@@ -2,7 +2,7 @@ import { generateTotp, parseOtpAuthUri, serializeOtpAuthUri } from '../vault/tot
 import qrcode from '../vendor/qrcode-generator.js';
 import '../vendor/jsqr.js';
 import { setSiteIcon } from './favicon.js';
-import { i18nInit, setLanguage, translateDocument } from '../i18n.js';
+import { i18nInit, setLanguage, translateDocument, t } from '../i18n.js';
 
 
 const $ = id => document.getElementById(id);
@@ -180,13 +180,21 @@ function authMode(exists, canCreate = true) {
   $('authView').classList.remove('hidden');
   $('vaultView').classList.add('hidden');
   const creationBlocked = !exists && canCreate === false;
-  $('authTitle').textContent = exists ? 'Mở khóa kho bảo mật' : creationBlocked ? 'Chưa thể tạo Vault' : 'Tạo kho bảo mật';
-  $('authHint').textContent = exists
-    ? 'Nhập mật khẩu chính để tiếp tục.'
+  $('authTitle').textContent = exists
+    ? t('unlockVaultHeader', 'Unlock Secure Vault')
     : creationBlocked
-      ? 'Aegis chưa kiểm tra xong dữ liệu trên Firebase. Hãy thử đồng bộ lại để tránh ghi đè backup hiện có.'
-      : 'Tạo câu mật khẩu chính tối thiểu 6 ký tự, dài và duy nhất.';
-  $('authButton').textContent = exists ? 'Mở khóa →' : creationBlocked ? 'Đang chờ Firebase' : 'Tạo vault →';
+      ? t('cantCreateVault', 'Cannot Create Vault Yet')
+      : t('createVaultHeader', 'Create Secure Vault');
+  $('authHint').textContent = exists
+    ? t('enterMasterPwd', 'Enter your master password to continue.')
+    : creationBlocked
+      ? t('firebaseCheckPending', 'Aegis has not finished checking Firebase data. Please try syncing again to avoid overwriting existing backup.')
+      : t('createMasterPwdHint', 'Create a strong, unique master password with at least 6 characters.');
+  $('authButton').textContent = exists
+    ? t('unlockBtnText', 'Unlock →')
+    : creationBlocked
+      ? t('waitingFirebase', 'Waiting for Firebase')
+      : t('createVaultBtn', 'Create Vault →');
   $('authButton').disabled = creationBlocked;
   $('masterPassword').disabled = creationBlocked;
   $('masterPassword').autocomplete = exists ? 'current-password' : 'new-password';
@@ -204,7 +212,7 @@ function renderVaultLoading() {
   $('subTabs').classList.remove('hidden');
   $('credentialList').innerHTML = `
     <div class="vault-loading" role="status" aria-live="polite">
-      <span>Đang mở Vault…</span>
+      <span>${t('openingVault', 'Opening Vault…')}</span>
       ${Array.from({ length: 5 }, () => `
         <div class="vault-loading-row" aria-hidden="true">
           <i></i><b></b><em></em>
@@ -1195,6 +1203,12 @@ function updateLangUI(lang) {
   const enBtn = $('langEnBtn');
   if (enBtn) enBtn.classList.toggle('active', lang === 'en');
   translateDocument();
+
+  const authBtn = $('authButton');
+  if (authBtn && authBtn.dataset.exists !== undefined) {
+    const exists = authBtn.dataset.exists === 'true';
+    authMode(exists, !authBtn.disabled);
+  }
 }
 
 function initLanguageUI() {

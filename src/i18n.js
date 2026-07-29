@@ -28,7 +28,21 @@ export const DICTIONARY = {
 
     // Auth & Unlock
     unlockVault: "Mở khóa Vault",
-    enterMasterPwd: "Nhập mật khẩu chính của bạn",
+    unlockVaultHeader: "Mở khóa kho bảo mật",
+    cantCreateVault: "Chưa thể tạo Vault",
+    createVaultHeader: "Tạo kho bảo mật",
+    masterPwdLabel: "Mật khẩu chính",
+    confirmMasterPwdLabel: "Nhập lại mật khẩu chính",
+    unlockBtnText: "Mở khóa →",
+    waitingFirebase: "Đang chờ Firebase",
+    createVaultBtn: "Tạo vault →",
+    signInDiffGoogle: "Đăng nhập tài khoản Google khác",
+    signInToManageTitle: "Đăng nhập để quản lý",
+    signInToManageDesc: "Google chỉ xác minh danh tính. Dữ liệu vẫn được mã hóa hoàn toàn cục bộ.",
+    continueWithGoogle: "Tiếp tục với Google →",
+    enterMasterPwd: "Nhập mật khẩu chính để tiếp tục.",
+    firebaseCheckPending: "Aegis chưa kiểm tra xong dữ liệu trên Firebase. Hãy thử đồng bộ lại để tránh ghi đè backup hiện có.",
+    createMasterPwdHint: "Tạo câu mật khẩu chính tối thiểu 6 ký tự, dài và duy nhất.",
     unlockBtn: "Mở khóa",
     signInGooglePrompt: "Bạn chưa đăng nhập tài khoản Google.",
     signInGoogleBtn: "Đăng nhập với Google",
@@ -36,6 +50,7 @@ export const DICTIONARY = {
     vaultLockedHint: "Vui lòng mở khóa trước khi quản lý dữ liệu.",
     lockVaultBtn: "Khóa Vault",
     deviceOnlyUnlocked: "Vault đã mở khóa (Chế độ thiết bị)",
+    openingVault: "Đang mở Vault…",
 
     // Password Generator
     pwdLength: "Độ dài mật khẩu",
@@ -129,7 +144,21 @@ export const DICTIONARY = {
 
     // Auth & Unlock
     unlockVault: "Unlock Vault",
-    enterMasterPwd: "Enter your master password",
+    unlockVaultHeader: "Unlock Secure Vault",
+    cantCreateVault: "Cannot Create Vault Yet",
+    createVaultHeader: "Create Secure Vault",
+    masterPwdLabel: "Master Password",
+    confirmMasterPwdLabel: "Confirm Master Password",
+    unlockBtnText: "Unlock →",
+    waitingFirebase: "Waiting for Firebase",
+    createVaultBtn: "Create Vault →",
+    signInDiffGoogle: "Sign in with a different Google account",
+    signInToManageTitle: "Sign in to Manage",
+    signInToManageDesc: "Google verifies identity only. Vault data remains fully encrypted locally.",
+    continueWithGoogle: "Continue with Google →",
+    enterMasterPwd: "Enter your master password to continue.",
+    firebaseCheckPending: "Aegis has not finished checking Firebase data. Please try syncing again to avoid overwriting existing backup.",
+    createMasterPwdHint: "Create a strong, unique master password with at least 6 characters.",
     unlockBtn: "Unlock",
     signInGooglePrompt: "You are not signed in to a Google account.",
     signInGoogleBtn: "Sign in with Google",
@@ -137,6 +166,7 @@ export const DICTIONARY = {
     vaultLockedHint: "Please unlock your vault to manage credentials.",
     lockVaultBtn: "Lock Vault",
     deviceOnlyUnlocked: "Vault Unlocked (Device Mode)",
+    openingVault: "Opening Vault…",
 
     // Password Generator
     pwdLength: "Password Length",
