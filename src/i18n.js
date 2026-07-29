@@ -114,6 +114,8 @@ export const DICTIONARY = {
     // Donate Modal
     donateTitle: "Ủng hộ tác giả (Donate)",
     donateDesc: "Cảm ơn bạn đã tin tưởng và sử dụng Aegis Vault! Mọi sự hỗ trợ của bạn là nguồn động lực rất lớn để tác giả duy trì và tiếp tục phát triển tiện ích.",
+    donateNetwork: "Mạng lưới",
+    donateAddress: "Địa chỉ ví",
     donateCopyBtc: "📋 Sao chép địa chỉ BTC",
     donateCopyUsdt: "📋 Sao chép địa chỉ USDT",
     donateCopiedBtc: "✓ Đã sao chép BTC!",
@@ -235,6 +237,8 @@ export const DICTIONARY = {
     // Donate Modal
     donateTitle: "Support the Author (Donate)",
     donateDesc: "Thank you for using Aegis Vault! Your generous support keeps this project active and continually improved.",
+    donateNetwork: "Network",
+    donateAddress: "Wallet Address",
     donateCopyBtc: "📋 Copy BTC Address",
     donateCopyUsdt: "📋 Copy USDT Address",
     donateCopiedBtc: "✓ Copied BTC Address!",

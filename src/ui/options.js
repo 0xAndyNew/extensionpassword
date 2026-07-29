@@ -1,6 +1,6 @@
 import { analyzeCredentials } from '../vault/password-security.js';
 import { setSiteIcon } from './favicon.js';
-import { i18nInit, setLanguage, translateDocument } from '../i18n.js';
+import { i18nInit, setLanguage, translateDocument, t } from '../i18n.js';
 
 
 const $ = id => document.getElementById(id);
@@ -960,13 +960,13 @@ async function copyToClipboard(text, btn, successLabel) {
 
 if ($('copyBtcBtn')) {
   $('copyBtcBtn').onclick = () => {
-    copyToClipboard('14enMJBiXgk7jLc187qXB5quBBSfsYuVG', $('copyBtcBtn'), '✓ Đã sao chép BTC!');
+    copyToClipboard('14enMJBiXgk7jLc187qXB5quBBSfsYuVG', $('copyBtcBtn'), t('donateCopiedBtc', '✓ Copied BTC Address!'));
   };
 }
 
 if ($('copyUsdtBtn')) {
   $('copyUsdtBtn').onclick = () => {
-    copyToClipboard('0x1b1817cc4f6eb49adb051c25d0f82e77f66c8514', $('copyUsdtBtn'), '✓ Đã sao chép USDT!');
+    copyToClipboard('0x1b1817cc4f6eb49adb051c25d0f82e77f66c8514', $('copyUsdtBtn'), t('donateCopiedUsdt', '✓ Copied USDT Address!'));
   };
 }
 
