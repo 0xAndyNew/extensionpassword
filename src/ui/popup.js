@@ -88,18 +88,18 @@ function updateSyncWarningBanner(syncStatus) {
   const state = String(syncStatus?.state || '').toLowerCase();
   if (['conflict', 'staged', 'error'].includes(state)) {
     banner.classList.remove('hidden');
-    let message = syncStatus.error || 'Lỗi kết nối hoặc đồng bộ Firebase.';
+    let message = syncStatus.error || t('syncErrorMsg', 'Firebase connection or sync error.');
     if (state === 'conflict' || state === 'staged') {
-      message = 'Xung đột dữ liệu với Firebase.';
-      actionBtn.textContent = 'Xử lý';
+      message = t('firebaseConflictMsg', 'Data conflict with Firebase.');
+      actionBtn.textContent = t('resolveBtn', 'Resolve');
       actionBtn.onclick = async () => {
         await send({ type: 'OPEN_OPTIONS' });
         window.close();
       };
     } else {
-      actionBtn.textContent = 'Chi tiết';
+      actionBtn.textContent = t('detailsBtn', 'Details');
       actionBtn.onclick = () => {
-        alert(`Chi tiết lỗi đồng bộ:\n${syncStatus.error || 'Không xác định'}`);
+        alert(`${t('syncErrorDetails', 'Sync error details')}:\n${syncStatus.error || ''}`);
       };
     }
     text.textContent = `⚠️ ${message}`;

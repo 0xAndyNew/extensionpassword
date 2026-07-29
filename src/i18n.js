@@ -105,6 +105,11 @@ export const DICTIONARY = {
     backupRestore: "Khôi phục Vault",
     lastpassImportTitle: "Nhập dữ liệu từ LastPass",
     otpImportTitle: "Nhập & xuất mã OTP",
+    firebaseConflictMsg: "Xung đột dữ liệu với Firebase.",
+    syncErrorMsg: "Lỗi kết nối hoặc đồng bộ Firebase.",
+    resolveBtn: "Xử lý",
+    detailsBtn: "Chi tiết",
+    syncErrorDetails: "Chi tiết lỗi đồng bộ",
     
     // Donate Modal
     donateTitle: "Ủng hộ tác giả (Donate)",
@@ -221,6 +226,11 @@ export const DICTIONARY = {
     backupRestore: "Restore Vault",
     lastpassImportTitle: "Import from LastPass",
     otpImportTitle: "Import & Export OTP",
+    firebaseConflictMsg: "Data conflict with Firebase.",
+    syncErrorMsg: "Firebase connection or sync error.",
+    resolveBtn: "Resolve",
+    detailsBtn: "Details",
+    syncErrorDetails: "Sync error details",
     
     // Donate Modal
     donateTitle: "Support the Author (Donate)",
