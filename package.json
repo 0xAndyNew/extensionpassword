@@ -5,6 +5,6 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/background.js && node --check src/message-policy.js && node --check src/vault/crypto.js && node --check src/vault/totp.js && node --check src/vault/repository.js && node --check src/vault/firebase-sync.js && node --check src/vault/pending-mutations.js && node --check src/vault/domain-policy.js && node --check src/vault/csv.js && node --check src/vault/password-security.js && node --check src/auth/firebase-config.js && node --check src/auth/firebase-auth.js && node --check src/content/content.js && node --check src/content/qr-selector.js && node --check src/ui/favicon.js && node --check src/ui/popup.js && node --check src/ui/options.js"
+    "check": "node --check src/i18n.js && node --check src/background.js && node --check src/message-policy.js && node --check src/vault/crypto.js && node --check src/vault/totp.js && node --check src/vault/repository.js && node --check src/vault/firebase-sync.js && node --check src/vault/pending-mutations.js && node --check src/vault/domain-policy.js && node --check src/vault/csv.js && node --check src/vault/password-security.js && node --check src/auth/firebase-config.js && node --check src/auth/firebase-auth.js && node --check src/content/content.js && node --check src/content/qr-selector.js && node --check src/ui/favicon.js && node --check src/ui/popup.js && node --check src/ui/options.js"
   }
 }

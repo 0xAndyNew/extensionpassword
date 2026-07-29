@@ -2,6 +2,8 @@ import { generateTotp, parseOtpAuthUri, serializeOtpAuthUri } from '../vault/tot
 import qrcode from '../vendor/qrcode-generator.js';
 import '../vendor/jsqr.js';
 import { setSiteIcon } from './favicon.js';
+import { i18nInit, setLanguage, translateDocument } from '../i18n.js';
+
 
 const $ = id => document.getElementById(id);
 const jsQR = globalThis.jsQR;
@@ -1185,8 +1187,57 @@ const advancedSettingsButton = $('advancedSettingsBtn');
 if (advancedSettingsButton) advancedSettingsButton.onclick = async () => { await send({ type: 'OPEN_OPTIONS' }); window.close(); };
 window.addEventListener('unload',()=>{stopOtpTimer();});
 
+function updateLangUI(lang) {
+  const langBtn = $('langButton');
+  if (langBtn) langBtn.textContent = lang === 'en' ? '🇬🇧' : '🇻🇳';
+  const viBtn = $('langViBtn');
+  if (viBtn) viBtn.classList.toggle('active', lang === 'vi');
+  const enBtn = $('langEnBtn');
+  if (enBtn) enBtn.classList.toggle('active', lang === 'en');
+  translateDocument();
+}
+
+function initLanguageUI() {
+  const langButton = $('langButton');
+  const langMenu = $('langMenu');
+  if (langButton && langMenu) {
+    langButton.onclick = (e) => {
+      e.stopPropagation();
+      langMenu.classList.toggle('hidden');
+    };
+
+    const viBtn = $('langViBtn');
+    if (viBtn) {
+      viBtn.onclick = async (e) => {
+        e.stopPropagation();
+        langMenu.classList.add('hidden');
+        const newLang = await setLanguage('vi');
+        updateLangUI(newLang);
+      };
+    }
+
+    const enBtn = $('langEnBtn');
+    if (enBtn) {
+      enBtn.onclick = async (e) => {
+        e.stopPropagation();
+        langMenu.classList.add('hidden');
+        const newLang = await setLanguage('en');
+        updateLangUI(newLang);
+      };
+    }
+
+    document.addEventListener('click', () => {
+      langMenu.classList.add('hidden');
+    });
+  }
+}
+
 async function bootPopup() {
   try {
+    const currentLang = await i18nInit(updateLangUI);
+    initLanguageUI();
+    updateLangUI(currentLang);
+
     const requestedTab = await chrome.storage.session.get([
       OPEN_OTP_TAB_SESSION_KEY,
       LAST_QR_SAVED_SESSION_KEY
@@ -1212,3 +1263,4 @@ async function bootPopup() {
 }
 
 void bootPopup();
+

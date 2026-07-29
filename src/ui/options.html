@@ -450,16 +450,34 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   color: var(--apple-green);
   border-color: rgba(52, 199, 89, 0.3);
 }
+
+.top-lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--apple-line);
+  background: #ffffff;
+  color: var(--apple-text);
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.top-lang-btn:hover {
+  background: #f5f5f7;
+}
 </style></head><body>
 <div class="modal-overlay" id="overlay"></div>
 <aside class="sidebar">
   <div class="brand"><img src="logo.svg" alt="logo" class="logo-img"><h1>Aegis Vault</h1></div>
   <ul class="nav-menu">
-    <li class="nav-item active" id="menuLogins">🔑 Logins</li>
-    <li class="nav-item" id="menuSecurity">🛡️ Security Center</li>
-    <li class="nav-item" id="menuIdentity">👤 Identity</li>
-    <li class="nav-item" id="menuSettings">⚙️ Settings</li>
-    <li class="nav-item" id="menuDonate">☕ Ủng hộ tác giả</li>
+    <li class="nav-item active" id="menuLogins" data-i18n="tabLogins">🔑 Logins</li>
+    <li class="nav-item" id="menuSecurity" data-i18n="tabSecurity">🛡️ Security Center</li>
+    <li class="nav-item" id="menuIdentity" data-i18n="tabIdentity">👤 Identity</li>
+    <li class="nav-item" id="menuSettings" data-i18n="tabSettings">⚙️ Settings</li>
+    <li class="nav-item" id="menuDonate" data-i18n="tabDonate">☕ Ủng hộ tác giả</li>
   </ul>
   <div class="sidebar-bottom">
     <div class="promo-box">
@@ -473,28 +491,35 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   <header class="top-bar">
     <div class="top-search-wrapper">
       <span class="top-search-icon">⌕</span>
-      <input type="search" id="dashboardSearch" placeholder="Search Aegis Vault">
+      <input type="search" id="dashboardSearch" placeholder="Search Aegis Vault" data-i18n-placeholder="searchPlaceholder">
     </div>
     <div class="top-right">
-      <button class="top-donate-btn" id="topDonateBtn" title="Ủng hộ tác giả Aegis Vault">☕ Ủng hộ tác giả</button>
-      <span class="top-help" title="Trợ giúp">❓</span>
+      <div class="lang-menu-wrap" style="position:relative">
+        <button id="optionsLangBtn" class="top-lang-btn" title="Đổi ngôn ngữ / Change language">🇻🇳 VI</button>
+        <div id="optionsLangMenu" class="user-dropdown hidden" style="min-width:130px">
+          <button id="optLangViBtn" class="dropdown-item">🇻🇳 Tiếng Việt</button>
+          <button id="optLangEnBtn" class="dropdown-item">🇬🇧 English</button>
+        </div>
+      </div>
+      <button class="top-donate-btn" id="topDonateBtn" title="Ủng hộ tác giả Aegis Vault" data-i18n="topDonateBtn">☕ Ủng hộ tác giả</button>
+      <span class="top-help" title="Trợ giúp" data-i18n-title="topHelp">❓</span>
       <div class="top-user hidden" id="topUserBtn">
         <div class="top-avatar" id="googleAvatar">?</div>
         <span id="profileEmail" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
         
         <!-- Dropdown Menu -->
         <div id="userDropdown" class="user-dropdown hidden">
-          <button id="dropdownChangePassword" class="dropdown-item">🔑 Đổi mật khẩu chính</button>
+          <button id="dropdownChangePassword" class="dropdown-item" data-i18n="changeMasterPwd">🔑 Đổi mật khẩu chính</button>
           <div class="dropdown-divider"></div>
-          <button id="dropdownSignOut" class="dropdown-item danger">🚪 Đăng xuất Google</button>
+          <button id="dropdownSignOut" class="dropdown-item danger" data-i18n="signOutGoogle">🚪 Đăng xuất Google</button>
         </div>
       </div>
     </div>
   </header>
   <nav class="sub-tabs-bar" id="subTabsBar">
-    <div class="sub-tab active" data-tab="popular">Popular</div>
-    <div class="sub-tab" data-tab="recent">Cập nhật gần đây</div>
-    <div class="sub-tab" data-tab="az">A-Z</div>
+    <div class="sub-tab active" data-tab="popular" data-i18n="subTabPopular">Popular</div>
+    <div class="sub-tab" data-tab="recent" data-i18n="subTabRecent">Cập nhật gần đây</div>
+    <div class="sub-tab" data-tab="az" data-i18n="subTabAZ">A-Z</div>
   </nav>
   
   <section class="grid-container" id="loginsSection">

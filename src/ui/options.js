@@ -1,5 +1,7 @@
 import { analyzeCredentials } from '../vault/password-security.js';
 import { setSiteIcon } from './favicon.js';
+import { i18nInit, setLanguage, translateDocument } from '../i18n.js';
+
 
 const $ = id => document.getElementById(id);
 let csvText = '';
@@ -47,7 +49,56 @@ async function refreshSyncStatus(initialStatus) {
   if (response?.ok !== false) applyRecoveryStatus(response?.status ?? response);
 }
 
+function updateOptionsLangUI(lang) {
+  const btn = $('optionsLangBtn');
+  if (btn) btn.textContent = lang === 'en' ? '🇬🇧 EN' : '🇻🇳 VI';
+  const viBtn = $('optLangViBtn');
+  if (viBtn) viBtn.classList.toggle('active', lang === 'vi');
+  const enBtn = $('optLangEnBtn');
+  if (enBtn) enBtn.classList.toggle('active', lang === 'en');
+  translateDocument();
+}
+
+function initOptionsLangUI() {
+  const langBtn = $('optionsLangBtn');
+  const langMenu = $('optionsLangMenu');
+  if (langBtn && langMenu) {
+    langBtn.onclick = (e) => {
+      e.stopPropagation();
+      langMenu.classList.toggle('hidden');
+    };
+
+    const viBtn = $('optLangViBtn');
+    if (viBtn) {
+      viBtn.onclick = async (e) => {
+        e.stopPropagation();
+        langMenu.classList.add('hidden');
+        const newLang = await setLanguage('vi');
+        updateOptionsLangUI(newLang);
+      };
+    }
+
+    const enBtn = $('optLangEnBtn');
+    if (enBtn) {
+      enBtn.onclick = async (e) => {
+        e.stopPropagation();
+        langMenu.classList.add('hidden');
+        const newLang = await setLanguage('en');
+        updateOptionsLangUI(newLang);
+      };
+    }
+
+    document.addEventListener('click', () => {
+      langMenu.classList.add('hidden');
+    });
+  }
+}
+
 async function init() {
+  const currentLang = await i18nInit(updateOptionsLangUI);
+  initOptionsLangUI();
+  updateOptionsLangUI(currentLang);
+
   const status = await send({ type: 'STATUS' });
   isSignedIn = Boolean(status.ok && status.user);
   $('topUserBtn').classList.toggle('hidden', !isSignedIn);
@@ -72,6 +123,7 @@ async function init() {
   }
   await refreshSyncStatus(status.syncStatus);
 }
+
 
 function updateProfileUI(user) {
   const name = user.name || 'Google Account';
