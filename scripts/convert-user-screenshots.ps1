@@ -1,6 +1,15 @@
+param(
+  [string]$SourceDirectory = 'D:\OneDrive\Desktop\Agens'
+)
+
 Add-Type -AssemblyName System.Drawing
 
-$srcDir = 'D:\OneDrive\Desktop\Agens'
+$srcDir = $SourceDirectory
+if (-not (Test-Path $srcDir)) {
+  Write-Host "Source directory does not exist: $srcDir"
+  exit 0
+}
+
 $outDir = Join-Path $PSScriptRoot '..\dist\screenshots'
 if (-not (Test-Path $outDir)) {
   New-Item -ItemType Directory -Path $outDir -Force | Out-Null
@@ -53,7 +62,7 @@ foreach ($file in $files) {
     $bmp.Save($jpgPath, $jpegCodec, $encoderParams)
 
     # Save PNG version
-    $pngName = "store_screenshot_${index}.png"
+    $pngName = "screenshot_${index}_1280x800.png"
     $pngPath = Join-Path $outDir $pngName
     $bmp.Save($pngPath, [System.Drawing.Imaging.ImageFormat]::Png)
 
@@ -63,7 +72,7 @@ foreach ($file in $files) {
     $shadowBrush.Dispose()
     $brush.Dispose()
 
-    Write-Host "Converted $($file.Name) -> $jpgName (1280x800 JPEG)"
+    Write-Host "Converted $($file.Name) -> $jpgName & $pngName (1280x800)"
     $index++
   } catch {
     Write-Host "Failed to process $($file.Name): $_"
