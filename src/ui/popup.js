@@ -239,6 +239,9 @@ async function showVault() {
   if (loadGeneration !== vaultLoadGeneration) return;
   if (r.ok) {
     credentials = Array.isArray(r.credentials) ? r.credentials : [];
+    const otpResponse = await sendReadWithRetry({ type: 'OTP_LIST' }, { attempts: 2, timeoutMs: 4000 });
+    if (loadGeneration !== vaultLoadGeneration) return;
+    otpAccounts = otpResponse.ok && Array.isArray(otpResponse.otpAccounts) ? otpResponse.otpAccounts : [];
     render();
   } else {
     $('error').textContent = r.error;
@@ -251,6 +254,115 @@ async function showVault() {
     });
   }
 }
+
+let popupLoginTimer = null;
+let popupLoginItem = null;
+
+async function fillCredential(item) {
+  const page = await activePageContext();
+  if (!page || page.tabId !== currentTabId || page.origin !== currentOrigin) {
+    alert('Trang đang mở đã thay đổi. Hãy đóng rồi mở lại Aegis Vault trên trang cần điền.');
+    return;
+  }
+  const res = await send({ type: 'FILL', id: item.id, origin: page.origin, tabId: page.tabId });
+  if (!res.ok) return alert(res.error);
+  const confirmedPage = await activePageContext();
+  if (confirmedPage?.tabId !== page.tabId || confirmedPage.origin !== page.origin) return;
+  try {
+    await chrome.tabs.sendMessage(confirmedPage.tabId, {
+      type: 'AEGIS_AUTOFILL', username: res.credential.username,
+      password: res.credential.password, origin: confirmedPage.origin
+    });
+    window.close();
+  } catch {
+    alert('Không thể kết nối với trang này. Hãy tải lại trang rồi thử lại.');
+  }
+}
+
+function closePopupLogin() {
+  if (popupLoginTimer) clearInterval(popupLoginTimer);
+  popupLoginTimer = null;
+  popupLoginItem = null;
+  $('popupLoginModal').classList.add('hidden');
+}
+
+async function openPopupLogin(item) {
+  closePopupLogin();
+  const detailResponse = await send({ type: 'GET_CREDENTIAL_DETAIL', id: item.id });
+  if (!detailResponse.ok || !detailResponse.credential) {
+    showOtpToast(detailResponse.error || 'Không đọc được thông tin tài khoản', 'error');
+    return;
+  }
+  const detailedItem = detailResponse.credential;
+  popupLoginItem = detailedItem;
+  const password = detailedItem.password || '';
+  $('popupLoginTitle').textContent = detailedItem.title || 'Không tiêu đề';
+  $('popupLoginUsername').textContent = detailedItem.username || '—';
+  $('popupLoginPassword').textContent = '•'.repeat(Math.max(password.length, 8));
+  $('popupLoginEye').setAttribute('aria-pressed', 'false');
+  if (!otpAccounts.length) {
+    const response = await send({ type: 'OTP_LIST' });
+    if (response.ok) otpAccounts = response.otpAccounts || [];
+  }
+  const normalizedTitle = String(item.title || '').trim().toLowerCase();
+  const normalizedUsername = String(item.username || '').trim().toLowerCase();
+  const otp = otpAccounts.find(value => value.id === detailedItem.otpId)
+    || otpAccounts.find(value => (
+      String(value.account || '').trim().toLowerCase() === normalizedUsername
+      && String(value.issuer || '').trim().toLowerCase() === normalizedTitle
+    ));
+  $('popupLoginOtpRow').classList.toggle('hidden', !otp);
+  const refreshOtp = async () => {
+    if (!popupLoginItem || !otp) return;
+    const configuredPeriod = Number(otp.period ?? 30);
+    const period = Number.isInteger(configuredPeriod) && configuredPeriod >= 5 && configuredPeriod <= 300 ? configuredPeriod : 30;
+    const remaining = period - (Math.floor(Date.now() / 1000) % period);
+    $('popupLoginOtpIssuer').textContent = otp.issuer || otp.account || 'OTP';
+    $('popupLoginOtpAccount').textContent = otp.account || '';
+    $('popupLoginCountdown').textContent = remaining;
+    $('popupLoginTimer').style.setProperty('--timer-angle', `${remaining / period * 360}deg`);
+    $('popupLoginTimer').classList.toggle('expiring', remaining <= 5);
+    try {
+      $('popupLoginOtp').textContent = await generateTotp(otp);
+      $('popupLoginOtp').classList.remove('invalid');
+      $('popupLoginOtp').classList.toggle('expiring', remaining <= 5);
+    } catch {
+      $('popupLoginOtp').textContent = 'OTP không hợp lệ';
+      $('popupLoginOtp').classList.add('invalid');
+    }
+  };
+  if (otp) {
+    await refreshOtp();
+    popupLoginTimer = setInterval(refreshOtp, 1000);
+  }
+  $('popupLoginEye').onclick = () => {
+    const visible = $('popupLoginEye').getAttribute('aria-pressed') === 'true';
+    $('popupLoginPassword').textContent = visible ? '•'.repeat(Math.max(password.length, 8)) : password;
+    $('popupLoginEye').setAttribute('aria-pressed', String(!visible));
+  };
+  const copyPopupValue = async (value, label) => {
+    try {
+      await navigator.clipboard.writeText(value || '');
+      showOtpToast(`Đã sao chép ${label}`, 'success');
+    } catch {
+      showOtpToast(`Không thể sao chép ${label}`, 'error');
+    }
+  };
+  const copyPopupOtp = async () => {
+    if ($('popupLoginOtp').classList.contains('invalid')) {
+      showOtpToast('OTP không hợp lệ — hãy kiểm tra lại', 'error');
+      return;
+    }
+    await copyPopupValue($('popupLoginOtp').textContent, 'mã OTP');
+  };
+  $('popupCopyUsername').onclick = () => { void copyPopupValue(detailedItem.username, 'tên đăng nhập'); };
+  $('popupCopyPassword').onclick = () => { void copyPopupValue(password, 'mật khẩu'); };
+  $('popupLoginOtpRow').onclick = () => { void copyPopupOtp(); };
+  $('popupLoginModal').classList.remove('hidden');
+}
+
+$('popupLoginClose').onclick = closePopupLogin;
+$('popupLoginModal').onclick = event => { if (event.target === $('popupLoginModal')) closePopupLogin(); };
 
 function render() {
   const q = $('searchInput').value.toLowerCase();
@@ -313,32 +425,7 @@ function render() {
 
     el.append(icon, info, menuBtn);
     
-    el.onclick = async () => {
-      const page = await activePageContext();
-      if (!page || page.tabId !== currentTabId || page.origin !== currentOrigin) {
-        alert('Trang đang mở đã thay đổi. Hãy đóng rồi mở lại Aegis Vault trên trang cần điền.');
-        return;
-      }
-      const res = await send({ type: 'FILL', id: item.id, origin: page.origin, tabId: page.tabId });
-      if (res.ok) {
-        const confirmedPage = await activePageContext();
-        if (confirmedPage?.tabId === page.tabId && confirmedPage.origin === page.origin) {
-          try {
-            await chrome.tabs.sendMessage(confirmedPage.tabId, {
-              type: 'AEGIS_AUTOFILL',
-              username: res.credential.username,
-              password: res.credential.password,
-              origin: confirmedPage.origin
-            });
-            window.close();
-          } catch {
-            alert('Không thể kết nối với trang này. Hãy tải lại trang rồi thử lại.');
-          }
-        }
-      } else {
-        alert(res.error);
-      }
-    };
+    el.onclick = () => { void openPopupLogin(item); };
     
     return el;
   }));

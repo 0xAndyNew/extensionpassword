@@ -1,6 +1,6 @@
 ﻿{
     "name":  "aegis-vault-extension",
-    "version":  "0.3.63",
+    "version":  "0.3.80",
     "private":  true,
     "type":  "module",
     "scripts":  {

@@ -172,7 +172,7 @@ export function validateVaultData(
   }
   for (const item of data.credentials) {
     if (!isPlainObject(item)) throw new Error('Tài khoản trong vault không hợp lệ.');
-    for (const field of ['id', 'title', 'url', 'origin', 'username', 'password', 'notes', 'createdAt', 'updatedAt']) {
+    for (const field of ['id', 'title', 'url', 'origin', 'username', 'password', 'notes', 'otpId', 'createdAt', 'updatedAt']) {
       if (item[field] !== undefined && (typeof item[field] !== 'string' || item[field].length > 1_000_000)) {
         throw new Error('Tài khoản trong vault không hợp lệ.');
       }

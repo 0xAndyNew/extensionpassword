@@ -17,3 +17,5 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+src/auth/firebase-config.js
+!src/auth/firebase-config.example.js

@@ -1,4 +1,5 @@
 import { analyzeCredentials } from '../vault/password-security.js';
+import { generateTotp } from '../vault/totp.js';
 import { setSiteIcon } from './favicon.js';
 import { i18nInit, setLanguage, translateDocument, t } from '../i18n.js';
 
@@ -10,6 +11,10 @@ let managerNotes = [];
 let managerCards = [];
 let managerIdentities = [];
 let managerTrash = [];
+let managerOtpAccounts = [];
+let loginDetailTimer = null;
+let activeLoginDetail = null;
+let editingId = '';
 let activeSubTab = 'popular';
 let importValidCount = 0;
 let csvReadGeneration = 0;
@@ -236,6 +241,7 @@ async function loadManager() {
     managerCards = res.cards || [];
     managerIdentities = res.identities || [];
     managerTrash = res.trash || [];
+    managerOtpAccounts = res.otpAccounts || [];
   } else {
     // Backward-compatible fallback: older service workers may not yet expose LIST_ALL.
     const legacy = await send({ type: 'LIST_DECRYPTED' });
@@ -245,6 +251,7 @@ async function loadManager() {
       managerCards = [];
       managerIdentities = [];
       managerTrash = [];
+      managerOtpAccounts = [];
       res = legacy;
     } else {
       managerCredentials = [];
@@ -337,13 +344,109 @@ function renderManager() {
     
     const overlay = document.createElement('div');
     overlay.className = 'card-hover-overlay';
-    overlay.textContent = '👁️ Click to View';
-    
+    overlay.textContent = item.otpId ? '🔐 Xem mật khẩu & OTP' : '👁 Xem thông tin';
     card.append(icon, title, user, overlay);
-    card.onclick = () => openDrawer(item);
+    card.onclick = () => openLoginDetail(item);
     return card;
   }));
 }
+
+function clearLoginDetailTimer() {
+  if (loginDetailTimer) clearInterval(loginDetailTimer);
+  loginDetailTimer = null;
+}
+
+async function copyLoginDetailValue(button, value, label = 'thông tin') {
+  const toast = $('loginDetailCopyToast');
+  try {
+    await navigator.clipboard.writeText(value || '');
+    if (button) {
+      button.classList.add('copied');
+      setTimeout(() => button.classList.remove('copied'), 900);
+    }
+    toast.textContent = `Đã sao chép ${label}`;
+  } catch {
+    toast.textContent = 'Không thể sao chép';
+    toast.classList.add('error');
+  }
+  toast.classList.add('show');
+  clearTimeout(toast.hideTimer);
+  toast.hideTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+}
+
+async function refreshLoginDetailOtp(otp) {
+  if (!activeLoginDetail || !otp) return;
+  const configuredPeriod = Number(otp.period ?? 30);
+  const period = Number.isInteger(configuredPeriod) && configuredPeriod >= 5 && configuredPeriod <= 300 ? configuredPeriod : 30;
+  const remaining = period - (Math.floor(Date.now() / 1000) % period);
+  $('loginDetailOtpIssuer').textContent = otp.issuer || otp.account || 'OTP';
+  $('loginDetailOtpAccount').textContent = otp.account || '';
+  $('loginDetailOtpCountdown').textContent = remaining;
+  $('loginDetailOtpTimer').style.setProperty('--timer-angle', `${remaining / period * 360}deg`);
+  $('loginDetailOtpTimer').classList.toggle('expiring', remaining <= 5);
+  try {
+    $('loginDetailOtp').textContent = await generateTotp(otp);
+    $('loginDetailOtp').classList.remove('invalid');
+    $('loginDetailOtp').classList.toggle('expiring', remaining <= 5);
+  } catch {
+    $('loginDetailOtp').textContent = 'OTP không hợp lệ';
+    $('loginDetailOtp').classList.add('invalid');
+  }
+}
+
+function closeLoginDetail() {
+  clearLoginDetailTimer();
+  activeLoginDetail = null;
+  $('loginDetailModal').classList.add('hidden');
+}
+
+function openLoginDetail(item) {
+  clearLoginDetailTimer();
+  activeLoginDetail = item;
+  const rawPassword = item.password || '';
+  const otp = managerOtpAccounts.find(value => value.id === item.otpId);
+  $('loginDetailTitle').textContent = item.title || 'Không tiêu đề';
+  $('loginDetailUsername').textContent = item.username || '—';
+  $('loginDetailPassword').textContent = '•'.repeat(Math.max(rawPassword.length, 8));
+  $('loginDetailPasswordToggle').setAttribute('aria-pressed', 'false');
+  setSiteIcon($('loginDetailIcon'), item.url || item.origins?.[0]);
+  $('loginDetailOtpBlock').classList.toggle('hidden', !otp);
+  if (otp) {
+    refreshLoginDetailOtp(otp);
+    loginDetailTimer = setInterval(() => refreshLoginDetailOtp(otp), 1000);
+  }
+  $('loginDetailPasswordToggle').onclick = () => {
+    const visible = $('loginDetailPasswordToggle').getAttribute('aria-pressed') === 'true';
+    $('loginDetailPassword').textContent = visible ? '•'.repeat(Math.max(rawPassword.length, 8)) : rawPassword;
+    $('loginDetailPasswordToggle').setAttribute('aria-pressed', String(!visible));
+  };
+  $('copyLoginUsername').onclick = () => copyLoginDetailValue($('copyLoginUsername'), item.username, 'tên đăng nhập');
+  $('copyLoginPassword').onclick = () => copyLoginDetailValue($('copyLoginPassword'), rawPassword, 'mật khẩu');
+  const copyLinkedOtp = async () => {
+    if ($('loginDetailOtp').classList.contains('invalid')) return;
+    await copyLoginDetailValue(null, $('loginDetailOtp').textContent.replace(/\s/g, ''), 'mã OTP');
+  };
+  $('loginDetailOtpBlock').onclick = () => { void copyLinkedOtp(); };
+  $('loginDetailOtpBlock').onkeydown = event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      void copyLinkedOtp();
+    }
+  };
+  $('loginDetailEdit').onclick = event => {
+    event.stopPropagation();
+    const credential = managerCredentials.find(value => value.id === item.id);
+    if (!credential) return;
+    closeLoginDetail();
+    openDrawer(credential);
+  };
+  $('loginDetailModal').classList.remove('hidden');
+}
+
+$('loginDetailClose').onclick = closeLoginDetail;
+$('loginDetailModal').onclick = event => {
+  if (event.target === $('loginDetailModal')) closeLoginDetail();
+};
 
 function securityLabel(level) {
   return level === 'strong' ? 'Mạnh' : level === 'medium' ? 'Trung bình' : 'Yếu';
@@ -439,21 +542,26 @@ function renderSecurityCenter() {
 
 // Drawer Controller
 function openDrawer(item = null) {
+  editingId = item?.id || '';
   $('overlay').classList.add('open');
   $('drawer').classList.add('open');
   if ($('loginSaveResult')) $('loginSaveResult').textContent = '';
   $('editPassword').type = 'password';
-  $('togglePassword').textContent = 'Show';
   
   if (item) {
     $('drawerTitle').textContent = item.title || 'Không tiêu đề';
-    $('editId').value = item.id;
+    $('editId').value = editingId;
     $('editTitle').value = item.title || '';
     $('editUrl').value = item.url || '';
     $('editMatchUrl').value = item.origins?.[0] || 'Khớp tên miền mặc định';
     $('editUsername').value = item.username || '';
     $('editPassword').value = item.password || '';
     $('editNotes').value = item.notes || '';
+    const linkedOtp = managerOtpAccounts.find(value => value.id === item.otpId);
+    $('editOtpIssuer').value = linkedOtp?.issuer || '';
+    $('editOtpAccount').value = linkedOtp?.account || '';
+    $('editOtpSecret').value = linkedOtp?.secret || '';
+    $('editOtpSecret').type = 'password';
     
     setSiteIcon($('drawerLogo'), item.url);
     $('deleteBtn').classList.remove('hidden');
@@ -485,6 +593,10 @@ function openDrawer(item = null) {
     $('editUsername').value = '';
     $('editPassword').value = '';
     $('editNotes').value = '';
+    $('editOtpIssuer').value = '';
+    $('editOtpAccount').value = '';
+    $('editOtpSecret').value = '';
+    $('editOtpSecret').type = 'password';
     $('drawerLogo').textContent = '🔒';
     $('deleteBtn').classList.add('hidden');
     $('pwdHistoryWrapper').classList.add('hidden');
@@ -504,16 +616,6 @@ function closeDrawer() {
 $('overlay').onclick = closeDrawer;
 $('drawerCancel').onclick = closeDrawer;
 
-$('togglePassword').onclick = () => {
-  const input = $('editPassword');
-  if (input.type === 'password') {
-    input.type = 'text';
-    $('togglePassword').textContent = 'Hide';
-  } else {
-    input.type = 'password';
-    $('togglePassword').textContent = 'Show';
-  }
-};
 
 $('openUrlBtn').onclick = () => {
   const url = getSafeWebUrl($('editUrl').value);
@@ -522,12 +624,15 @@ $('openUrlBtn').onclick = () => {
 };
 
 $('drawerSave').onclick = async () => {
-  const id = $('editId').value;
+  const id = editingId || $('editId').value;
   const title = $('editTitle').value.trim();
   const url = $('editUrl').value.trim();
   const username = $('editUsername').value.trim();
   const password = $('editPassword').value;
   const notes = $('editNotes').value;
+  const otpIssuer = $('editOtpIssuer').value.trim();
+  const otpAccount = $('editOtpAccount').value.trim();
+  const otpSecret = $('editOtpSecret').value.trim();
   const favorite = editingId
     ? Boolean(managerCredentials.find(item => item.id === editingId)?.favorite)
     : false;
@@ -537,9 +642,23 @@ $('drawerSave').onclick = async () => {
     status.textContent = 'Vui lòng điền Website, Tên đăng nhập và Mật khẩu.';
     return;
   }
+  const hasAnyOtpInput = Boolean(otpIssuer || otpAccount || otpSecret);
+  const isOtpUri = otpSecret.toLowerCase().startsWith('otpauth://');
+  if (hasAnyOtpInput && !otpSecret) {
+    status.style.color = '#e11d48';
+    status.textContent = 'Vui lòng nhập mã bí mật OTP để tạo mã OTP.';
+    $('editOtpSecret').focus();
+    return;
+  }
+  if (otpSecret && !isOtpUri && (!otpIssuer || !otpAccount)) {
+    status.style.color = '#e11d48';
+    status.textContent = 'Vui lòng nhập đầy đủ Dịch vụ OTP, Tài khoản OTP và mã bí mật OTP.';
+    (!otpIssuer ? $('editOtpIssuer') : $('editOtpAccount')).focus();
+    return;
+  }
   status.style.color = '#6b7280';
   status.textContent = 'Đang lưu…';
-  const res = await send({ type: 'UPDATE_ITEM', id, title, url, username, password, notes, favorite });
+  const res = await send({ type: 'UPDATE_ITEM', id, title, url, username, password, notes, otpIssuer, otpAccount, otpSecret, favorite });
   if (res.ok) {
     status.style.color = '#22a65a';
     status.textContent = '✓ Đã lưu thông tin tài khoản thành công.';

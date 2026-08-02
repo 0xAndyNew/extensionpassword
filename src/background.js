@@ -146,6 +146,7 @@ function safeCredential(item) {
     url: item.url || '',
     origins: Array.isArray(item.origins) ? item.origins : [],
     username: item.username || '',
+    otpId: typeof item.otpId === 'string' ? item.otpId : '',
     grouping: item.grouping || '',
     favorite: Boolean(item.favorite),
     createdAt: item.createdAt || null,
@@ -587,6 +588,12 @@ async function handle(rawMessage, context) {
     return { credentials: vault.credentials.map(safeCredential) };
   }
   if (message.type === 'LIST_DECRYPTED') return { credentials: vault.credentials };
+  if (message.type === 'GET_CREDENTIAL_DETAIL') {
+    const id = asId(message.id);
+    const credential = vault.credentials.find(item => item.id === id);
+    if (!credential) throw new Error('Không tìm thấy tài khoản.');
+    return { credential };
+  }
 
   if (message.type === 'MATCH') {
     return {
@@ -671,6 +678,44 @@ async function handle(rawMessage, context) {
     const id = message.id ? asId(message.id) : '';
     const now = new Date().toISOString();
     const newPassword = asText(message.password, 'Mật khẩu', { required: true, max: MAX_PASSWORD_LENGTH });
+    const rawOtpSecret = asText(message.otpSecret, 'Mã bí mật OTP', { max: 16384 }).trim();
+    const otpIssuer = asText(message.otpIssuer, 'Dịch vụ OTP', { max: 512 }).trim();
+    const otpAccount = asText(message.otpAccount, 'Tài khoản OTP', { max: MAX_USERNAME_LENGTH }).trim();
+    const linkedOtp = id
+      ? (vault.otpAccounts || []).find(otp => otp.id === vault.credentials.find(item => item.id === id)?.otpId)
+      : null;
+    let savedOtp = null;
+    if (rawOtpSecret) {
+      const parsedOtp = rawOtpSecret.toLowerCase().startsWith('otpauth://')
+        ? parseOtpAuthUri(rawOtpSecret)
+        : {
+            issuer: asText(otpIssuer, 'Dịch vụ OTP', { required: true, max: 512 }),
+            account: asText(otpAccount, 'Tài khoản OTP', { required: true, max: MAX_USERNAME_LENGTH }),
+            secret: normalizeSecret(rawOtpSecret),
+            algorithm: linkedOtp?.algorithm || 'SHA1',
+            digits: linkedOtp?.digits || 6,
+            period: linkedOtp?.period || 30
+          };
+      if (linkedOtp) {
+        Object.assign(linkedOtp, parsedOtp, {
+          issuer: parsedOtp.issuer || otpIssuer,
+          account: parsedOtp.account || otpAccount,
+          updatedAt: now
+        });
+        savedOtp = linkedOtp;
+      } else {
+        savedOtp = {
+          id: crypto.randomUUID(),
+          ...parsedOtp,
+          issuer: parsedOtp.issuer || otpIssuer,
+          account: parsedOtp.account || otpAccount,
+          createdAt: now,
+          updatedAt: now
+        };
+        if (!Array.isArray(vault.otpAccounts)) vault.otpAccounts = [];
+        vault.otpAccounts.push(savedOtp);
+      }
+    }
     const updated = {
       title: asText(message.title, 'Tên mục', { max: 512 }).trim() || url.hostname,
       url: url.href,
@@ -679,6 +724,7 @@ async function handle(rawMessage, context) {
       username: asText(message.username, 'Tên đăng nhập', { required: true, max: MAX_USERNAME_LENGTH }).trim(),
       password: newPassword,
       notes: asText(message.notes, 'Ghi chú', { max: MAX_NOTES_LENGTH }),
+      otpId: savedOtp?.id || '',
       favorite: Boolean(message.favorite),
       updatedAt: now
     };
@@ -706,7 +752,8 @@ async function handle(rawMessage, context) {
     }
     const savedId = id || vault.credentials[vault.credentials.length - 1].id;
     return writeVaultLocalFirst(vault, password, user.sub, [
-      { kind: 'credential-upsert', id: savedId }
+      { kind: 'credential-upsert', id: savedId },
+      ...(savedOtp ? [{ kind: 'otp-upsert', id: savedOtp.id }] : [])
     ]);
   }
 
@@ -963,8 +1010,16 @@ async function handle(rawMessage, context) {
   if (message.type === 'OTP_DELETE') {
     const id = asId(message.id);
     const target = otpAccounts.find(item => item.id === id);
+    const linkedCredentialIds = [];
     if (target) {
       vault.otpAccounts = otpAccounts.filter(item => item.id !== id);
+      for (const credential of vault.credentials || []) {
+        if (credential.otpId === id) {
+          credential.otpId = '';
+          credential.updatedAt = new Date().toISOString();
+          linkedCredentialIds.push(credential.id);
+        }
+      }
       if (!Array.isArray(vault.trash)) vault.trash = [];
       vault.trash.push({
         id: crypto.randomUUID(),
@@ -974,7 +1029,8 @@ async function handle(rawMessage, context) {
       });
     }
     const localWrite = await writeVaultLocalFirst(vault, password, user.sub, [
-      { kind: 'otp-delete', id }
+      { kind: 'otp-delete', id },
+      ...linkedCredentialIds.map(credentialId => ({ kind: 'credential-upsert', id: credentialId }))
     ]);
     return {
       otpAccounts: vault.otpAccounts,

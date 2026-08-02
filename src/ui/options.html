@@ -261,7 +261,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 .security-empty { padding: 40px 20px; color: var(--apple-muted); text-align: center; font-size: 12.5px; }
 @media (max-width: 850px) { .security-hero { grid-template-columns: 1fr; } .security-stats { grid-template-columns: repeat(2,1fr); } .security-table th:nth-child(2), .security-table td:nth-child(2) { display:none; } }
 @media (max-width: 850px) { .backup-grid { grid-template-columns: 1fr; } }
-@media (max-width: 720px) { .config-actions { align-items: stretch; flex-direction: column; } .config-actions button { width: 100%; } .field-stack { width: 100%; min-width: 0; } .file-picker { align-items: stretch; flex-direction: column; } }
+.login-detail-panel{padding:30px;background:#fff;color:#1d1d1f;border:1px solid rgba(0,0,0,.08);border-radius:22px;box-shadow:0 24px 60px rgba(15,23,42,.18)}
+.login-detail-heading{display:flex;align-items:center;gap:12px;margin-bottom:24px}.login-detail-heading .card-shield{background:#f2f8ff;flex:0 0 42px}.login-detail-heading small,.login-detail-field small,.login-detail-otp small{color:#6e6e73;font-size:10px;letter-spacing:.12em}.login-detail-heading h3{margin:4px 0 0;font-size:21px;color:#1d1d1f}
+.login-detail-field{padding:15px 0;border-top:1px solid #e5e5ea}.login-detail-field>div{display:flex;align-items:center;gap:9px;margin-top:7px;min-height:28px}.login-detail-field span{font-size:15px;font-weight:700;overflow-wrap:anywhere;color:#1d1d1f}.login-detail-field>div>span{flex:1}.login-detail-panel .card-inline-copy{color:#3a526f;border-color:#d2d5da;background:#f5f5f7}.login-detail-panel .card-cvv-toggle{position:relative;right:auto;top:auto;transform:none;width:34px;height:30px;border:1px solid #c7cbd1;background:#f5f5f7;color:#344054;border-radius:8px;display:grid;place-items:center;cursor:pointer}.login-detail-panel .card-cvv-toggle::before{content:'';width:17px;height:11px;box-sizing:border-box;border:2px solid currentColor;border-radius:70% 20% 70% 20%;transform:rotate(45deg)}.login-detail-panel .card-cvv-toggle::after{content:'';position:absolute;width:5px;height:5px;border-radius:50%;background:currentColor}.login-detail-panel .card-cvv-toggle:hover{color:#0071e3;border-color:#99caff;background:#eef7ff}
+.login-detail-copy-toast{position:absolute;left:50%;top:14px;z-index:8;max-width:calc(100% - 70px);box-sizing:border-box;padding:9px 15px;border-radius:9px;background:rgba(24,126,74,.96);color:#fff;font-size:12px;font-weight:700;text-align:center;white-space:nowrap;box-shadow:0 10px 28px rgba(0,0,0,.22);opacity:0;pointer-events:none;transform:translate(-50%,-8px);transition:opacity .18s,transform .18s}.login-detail-copy-toast.show{opacity:1;transform:translate(-50%,0)}.login-detail-copy-toast.error{background:rgba(180,35,24,.96)}
+.login-detail-panel{position:relative}
+.login-detail-otp{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:17px;padding:17px 18px;border:1px solid #b7ddff;border-radius:14px;background:linear-gradient(100deg,#eef7ff,#f7fbff)}.login-detail-otp>div:first-child{display:flex;flex-direction:column;gap:4px}.login-detail-otp strong{font:800 28px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.16em;color:#0071e3}.login-detail-otp span{font-size:11px;color:#5f6f82}.login-detail-otp-actions{display:flex;align-items:center;gap:10px}.login-detail-otp-actions>span{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;border:3px solid #0a84ff;color:#1d1d1f;font-weight:800}
+.login-detail-no-otp{margin-top:17px;padding:13px;border:1px dashed #c7cbd1;border-radius:12px;color:#6e6e73;background:#fafafa;font-size:13px}.login-detail-actions{display:flex;gap:10px;margin-top:22px}.login-detail-actions button{padding:11px 16px;border-radius:10px;font-weight:700;cursor:pointer}.login-detail-actions button:first-child{flex:1;border:0;background:#0071e3;color:#fff}.login-detail-actions button:last-child{border:1px solid #d2d5da;background:#f5f5f7;color:#1d1d1f}
+
+.login-linked-otp{position:relative;box-sizing:border-box;width:100%;min-height:108px;margin-top:17px;padding:12px 58px 11px 14px;border:1px solid #c8c8c8;border-radius:12px;background:#fff;cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s;font-family:Arial,"Segoe UI",sans-serif}.login-linked-otp:hover{border-color:#008bd2;background:#fbfdff;box-shadow:0 0 0 1px rgba(0,139,210,.12)}.login-linked-otp-issuer{color:#080808;font-size:13px;line-height:17px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.login-linked-otp-code{margin:3px 0 1px;color:#008bd2;font:400 40px/44px "Segoe UI",Arial,sans-serif;letter-spacing:.055em;font-variant-numeric:tabular-nums;transition:color .2s}.login-linked-otp-code.expiring{color:#ef453d}.login-linked-otp-code.invalid{margin:12px 0;color:#d92d20;font:650 13px/18px var(--font-family);letter-spacing:0}.login-linked-otp-account{color:#090909;font-size:11px;line-height:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.login-linked-otp-side{position:absolute;right:12px;top:10px;bottom:10px;display:flex;flex-direction:column;align-items:center;justify-content:space-between}.login-linked-otp-side .card-inline-copy{color:#3a526f;border-color:#d2d5da;background:#f5f5f7}.login-linked-otp-timer{--timer-color:#008bd2;--timer-angle:360deg;position:relative;width:30px;height:30px;display:grid;place-items:center;border-radius:50%;background:conic-gradient(from -90deg,var(--timer-color) 0deg var(--timer-angle),#d9e5ec var(--timer-angle) 360deg);color:#087db5;font:700 9px/1 Arial,sans-serif}.login-linked-otp-timer::before{content:'';position:absolute;inset:4px;border-radius:50%;background:#fff}.login-linked-otp-timer span{position:relative;z-index:1}.login-linked-otp-timer.expiring{--timer-color:#ef453d;color:#d9362f;background:conic-gradient(from -90deg,#ef453d 0deg var(--timer-angle),#f4cecb var(--timer-angle) 360deg)}
+
+@media (max-width: 760px) { .config-actions { align-items: stretch; flex-direction: column; } .config-actions button { width: 100%; } .field-stack { width: 100%; min-width: 0; } .file-picker { align-items: stretch; flex-direction: column; } }
 
 /* Top bar donation button */
 .top-donate-btn {
@@ -919,8 +929,24 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
       <label for="editPassword">Password</label>
       <div class="input-with-btn">
         <input type="password" id="editPassword"><button type="button" class="toggle-pwd-btn" data-target="editPassword" aria-label="Hiện mật khẩu" title="Hiện/Ẩn mật khẩu"></button>
-        <button id="togglePassword" type="button">Show</button>
       </div>
+    </div>
+    <div class="form-section-title">Thông tin OTP</div>
+    <div class="form-group">
+      <label for="editOtpIssuer">Dịch vụ OTP</label>
+      <input type="text" id="editOtpIssuer" placeholder="Ví dụ: Microsoft OTP Outlook">
+    </div>
+    <div class="form-group">
+      <label for="editOtpAccount">Tài khoản OTP</label>
+      <input type="text" id="editOtpAccount" placeholder="Ví dụ: email@example.com">
+    </div>
+    <div class="form-group">
+      <label for="editOtpSecret">Mã bí mật OTP (Base32)</label>
+      <div class="input-with-btn">
+        <input type="password" id="editOtpSecret" autocomplete="off" spellcheck="false" placeholder="Nhập mã bí mật OTP">
+        <button type="button" class="toggle-pwd-btn" data-target="editOtpSecret" aria-label="Hiện mã bí mật OTP" title="Hiện/Ẩn mã bí mật OTP"></button>
+      </div>
+      <small style="display:block;margin-top:6px;color:var(--apple-muted)">Nhập đủ Dịch vụ, Tài khoản và mã Base32; hoặc dán URI otpauth:// để Aegis tự nhận diện.</small>
     </div>
 
     <div id="pwdHistoryWrapper" class="hidden" style="margin:8px 0 16px; padding:10px 12px; background:var(--apple-bg); border-radius:10px; border:1px solid var(--apple-line);">
@@ -1025,6 +1051,28 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
       <button id="noteDetailCopy" type="button">📋 Sao chép nội dung</button>
     </div>
   </article>
+</div>
+
+<!-- Login Detail -->
+<div id="loginDetailModal" class="card-detail-modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginDetailTitle">
+  <div class="card-detail-shell" style="max-width:520px">
+    <button id="loginDetailClose" class="card-detail-close" type="button" aria-label="Đóng">✕</button>
+    <div class="login-detail-panel">
+      <div id="loginDetailCopyToast" class="login-detail-copy-toast" role="status" aria-live="polite"></div>
+      <div class="login-detail-heading"><div id="loginDetailIcon" class="card-shield"></div><div><small>TÀI KHOẢN BẢO MẬT</small><h3 id="loginDetailTitle"></h3></div></div>
+      <div class="login-detail-field"><small>TÊN ĐĂNG NHẬP</small><div><span id="loginDetailUsername"></span><button id="copyLoginUsername" class="card-inline-copy" type="button" aria-label="Sao chép tên đăng nhập"></button></div></div>
+      <div class="login-detail-field"><small>MẬT KHẨU</small><div><span id="loginDetailPassword"></span><button id="loginDetailPasswordToggle" class="card-cvv-toggle" type="button" aria-label="Hiện mật khẩu"></button><button id="copyLoginPassword" class="card-inline-copy" type="button" aria-label="Sao chép mật khẩu"></button></div></div>
+      <article id="loginDetailOtpBlock" class="login-linked-otp hidden" tabindex="0" role="button" aria-label="Sao chép mã OTP">
+        <div id="loginDetailOtpIssuer" class="login-linked-otp-issuer"></div>
+        <div id="loginDetailOtp" class="login-linked-otp-code">------</div>
+        <div id="loginDetailOtpAccount" class="login-linked-otp-account"></div>
+        <div class="login-linked-otp-side">
+          <span id="loginDetailOtpTimer" class="login-linked-otp-timer"><span id="loginDetailOtpCountdown"></span></span>
+        </div>
+      </article>
+      <div class="login-detail-actions"><button id="loginDetailEdit" type="button">Sửa thông tin</button></div>
+    </div>
+  </div>
 </div>
 
 <!-- Payment Card Detail -->
