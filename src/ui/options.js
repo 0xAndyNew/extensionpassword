@@ -6,6 +6,10 @@ import { i18nInit, setLanguage, translateDocument, t } from '../i18n.js';
 const $ = id => document.getElementById(id);
 let csvText = '';
 let managerCredentials = [];
+let managerNotes = [];
+let managerCards = [];
+let managerIdentities = [];
+let managerTrash = [];
 let activeSubTab = 'popular';
 let importValidCount = 0;
 let csvReadGeneration = 0;
@@ -57,6 +61,13 @@ function updateOptionsLangUI(lang) {
   const enBtn = $('optLangEnBtn');
   if (enBtn) enBtn.classList.toggle('active', lang === 'en');
   translateDocument();
+  if (managerCredentials.length || managerNotes.length || managerCards.length || managerTrash.length) {
+    renderManager();
+    renderNotes();
+    renderCards();
+    renderTrash();
+    renderSecurityCenter();
+  }
 }
 
 function initOptionsLangUI() {
@@ -100,7 +111,11 @@ async function init() {
   updateOptionsLangUI(currentLang);
 
   const status = await send({ type: 'STATUS' });
-  isSignedIn = Boolean(status.ok && status.user);
+  if (status?.ok === false) {
+    renderManagerError(status.error || 'Không thể kết nối tới Aegis Vault.');
+    return;
+  }
+  isSignedIn = Boolean(status.user);
   $('topUserBtn').classList.toggle('hidden', !isSignedIn);
   applyRecoveryStatus(status.syncStatus, isSignedIn);
 
@@ -110,18 +125,85 @@ async function init() {
     $('profileEmail').textContent = '';
     $('googleAvatar').textContent = '?';
   }
-  
-  if (status.ok && status.unlocked) {
+
+  if (status.unlocked) {
     await loadManager();
   } else {
-    $('loginsGrid').innerHTML = `
-      <div style="grid-column: 1/-1; text-align: center; padding: 60px; color: var(--muted);">
-        <p style="font-size: 14px; margin-bottom: 16px;">${isSignedIn ? 'Kho mật khẩu của bạn đang khóa.' : 'Bạn chưa đăng nhập Google.'}</p>
-        <p style="font-size: 12px;">${isSignedIn ? 'Vui lòng nhấp vào biểu tượng Aegis Vault ở thanh công cụ trình duyệt để mở khóa trước khi quản lý.' : 'Hãy đăng nhập từ popup Aegis Vault trước khi mở trang quản lý.'}</p>
-      </div>
-    `;
+    renderUnlockPrompt(status);
   }
   await refreshSyncStatus(status.syncStatus);
+}
+
+function renderUnlockPrompt(status) {
+  const container = $('loginsGrid');
+  if (!container) return;
+
+  if (!isSignedIn) {
+    container.innerHTML = `
+      <div style="grid-column: 1/-1; max-width: 440px; margin: 40px auto; padding: 36px; background: #ffffff; border-radius: 20px; border: 1px solid var(--apple-line); box-shadow: 0 10px 30px rgba(0,0,0,0.06); text-align: center;">
+        <div style="font-size: 42px; margin-bottom: 12px;">🔑</div>
+        <h3 style="margin: 0 0 8px; font-size: 18px; font-weight: 700; color: var(--apple-text);">Đăng nhập để quản lý Vault</h3>
+        <p style="margin: 0 0 20px; font-size: 13px; color: var(--apple-muted);">Vui lòng nhấp vào biểu tượng Aegis Vault ở thanh công cụ trình duyệt để đăng nhập Google trước khi quản lý.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="grid-column: 1/-1; max-width: 440px; margin: 40px auto; padding: 36px; background: #ffffff; border-radius: 20px; border: 1px solid var(--apple-line); box-shadow: 0 10px 30px rgba(0,0,0,0.06); text-align: center;">
+      <div style="font-size: 42px; margin-bottom: 12px;">🔒</div>
+      <h3 style="margin: 0 0 8px; font-size: 18px; font-weight: 700; color: var(--apple-text);">Mở khóa Aegis Vault</h3>
+      <p style="margin: 0 0 20px; font-size: 13px; color: var(--apple-muted);">Nhập mật khẩu chính của bạn để mở khóa tất cả tài khoản, ghi chú và thẻ thanh toán.</p>
+      <div style="position: relative; margin-bottom: 16px;">
+        <input id="optionsMasterPassword" type="password" placeholder="Nhập mật khẩu chính" style="width: 100%; box-sizing: border-box; padding: 12px 40px 12px 14px; border-radius: 10px; border: 1px solid var(--apple-line); outline: none; font-size: 14px;">
+        <button id="toggleOptionsMasterPwd" type="button" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: 0; cursor: pointer; font-size: 16px; opacity: 0.7;">👁️</button>
+      </div>
+      <button id="optionsUnlockBtn" style="width: 100%; padding: 12px; border-radius: 10px; background: var(--apple-accent); color: #ffffff; border: 0; font-weight: 700; font-size: 14px; cursor: pointer;">Mở khóa Vault →</button>
+      <p id="optionsUnlockError" style="margin: 12px 0 0; color: #e11d48; font-size: 12.5px; font-weight: 600;"></p>
+    </div>
+  `;
+
+  const input = $('optionsMasterPassword');
+  const toggleBtn = $('toggleOptionsMasterPwd');
+  const unlockBtn = $('optionsUnlockBtn');
+  const errorText = $('optionsUnlockError');
+
+  if (toggleBtn && input) {
+    toggleBtn.onclick = () => {
+      const isPwd = input.type === 'password';
+      input.type = isPwd ? 'text' : 'password';
+      toggleBtn.textContent = isPwd ? '🙈' : '👁️';
+    };
+  }
+
+  const handleUnlock = async () => {
+    const password = input.value;
+    if (!password) {
+      errorText.textContent = 'Vui lòng nhập mật khẩu chính.';
+      return;
+    }
+    unlockBtn.disabled = true;
+    unlockBtn.textContent = 'Đang mở khóa…';
+    errorText.textContent = '';
+
+    const res = await send({ type: 'UNLOCK', password });
+    if (res.ok) {
+      await loadManager();
+      await refreshSyncStatus(res.syncStatus);
+    } else {
+      unlockBtn.disabled = false;
+      unlockBtn.textContent = 'Mở khóa Vault →';
+      errorText.textContent = res.error || 'Mật khẩu chính không đúng.';
+    }
+  };
+
+  if (unlockBtn) unlockBtn.onclick = handleUnlock;
+  if (input) {
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') handleUnlock();
+    };
+    input.focus();
+  }
 }
 
 
@@ -147,17 +229,63 @@ function updateProfileUI(user) {
 }
 
 async function loadManager() {
-  const res = await send({ type: 'LIST_DECRYPTED' });
+  let res = await send({ type: 'LIST_ALL' });
   if (res.ok) {
-    managerCredentials = res.credentials;
-    securityReport = analyzeCredentials(managerCredentials);
-    renderManager();
-    renderSecurityCenter();
+    managerCredentials = res.credentials || [];
+    managerNotes = res.notes || [];
+    managerCards = res.cards || [];
+    managerIdentities = res.identities || [];
+    managerTrash = res.trash || [];
   } else {
-    managerCredentials = [];
-    securityReport = analyzeCredentials([]);
-    renderSecurityCenter();
+    // Backward-compatible fallback: older service workers may not yet expose LIST_ALL.
+    const legacy = await send({ type: 'LIST_DECRYPTED' });
+    if (legacy.ok) {
+      managerCredentials = legacy.credentials || [];
+      managerNotes = [];
+      managerCards = [];
+      managerIdentities = [];
+      managerTrash = [];
+      res = legacy;
+    } else {
+      managerCredentials = [];
+      managerNotes = [];
+      managerCards = [];
+      managerIdentities = [];
+      managerTrash = [];
+      renderManagerError(res.error || legacy.error || 'Không thể đọc dữ liệu Vault.');
+      return;
+    }
   }
+
+  securityReport = analyzeCredentials(managerCredentials);
+  renderManager();
+  renderNotes();
+  renderCards();
+  renderIdentities();
+  renderTrash();
+  renderSecurityCenter();
+}
+
+function renderManagerError(message) {
+  const container = $('loginsGrid');
+  if (!container) return;
+  container.innerHTML = `<div style="grid-column:1/-1; max-width:560px; margin:40px auto; padding:28px; background:#fff7f6; border:1px solid #ffd0cd; border-radius:16px; text-align:center; color:#85221c;">
+    <div style="font-size:34px; margin-bottom:8px;">⚠️</div>
+    <h3 style="margin:0 0 8px;">Không đọc được dữ liệu Vault</h3>
+    <p style="margin:0 0 16px; font-size:13px;">${String(message).replace(/[<>&"']/g, char => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[char]))}</p>
+    <button id="retryManagerBtn" type="button" style="padding:9px 18px; border:0; border-radius:8px; background:#b42318; color:#fff; font-weight:700; cursor:pointer;">Thử lại</button>
+  </div>`;
+  $('retryManagerBtn').onclick = () => loadManager();
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]);
 }
 
 function getSafeWebUrl(value) {
@@ -313,6 +441,7 @@ function renderSecurityCenter() {
 function openDrawer(item = null) {
   $('overlay').classList.add('open');
   $('drawer').classList.add('open');
+  if ($('loginSaveResult')) $('loginSaveResult').textContent = '';
   $('editPassword').type = 'password';
   $('togglePassword').textContent = 'Show';
   
@@ -325,10 +454,28 @@ function openDrawer(item = null) {
     $('editUsername').value = item.username || '';
     $('editPassword').value = item.password || '';
     $('editNotes').value = item.notes || '';
-    $('editFavorite').checked = Boolean(item.favorite);
     
     setSiteIcon($('drawerLogo'), item.url);
     $('deleteBtn').classList.remove('hidden');
+
+    if (Array.isArray(item.passwordHistory) && item.passwordHistory.length > 0) {
+      $('pwdHistoryWrapper').classList.remove('hidden');
+      $('pwdHistoryList').replaceChildren(...item.passwordHistory.map((ph) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; font-size:11px; padding:4px 8px; background:#ffffff; border-radius:6px; border:1px solid var(--apple-line);';
+        const pwd = document.createElement('code');
+        pwd.style.fontFamily = 'monospace';
+        pwd.textContent = ph.password;
+        const date = document.createElement('span');
+        date.style.color = 'var(--apple-muted)';
+        date.style.fontSize = '10px';
+        date.textContent = new Date(ph.changedAt).toLocaleDateString();
+        row.append(pwd, date);
+        return row;
+      }));
+    } else {
+      $('pwdHistoryWrapper').classList.add('hidden');
+    }
   } else {
     $('drawerTitle').textContent = 'Thêm tài khoản';
     $('editId').value = '';
@@ -338,20 +485,24 @@ function openDrawer(item = null) {
     $('editUsername').value = '';
     $('editPassword').value = '';
     $('editNotes').value = '';
-    $('editFavorite').checked = false;
     $('drawerLogo').textContent = '🔒';
     $('deleteBtn').classList.add('hidden');
+    $('pwdHistoryWrapper').classList.add('hidden');
   }
 }
 
 function closeDrawer() {
   $('overlay').classList.remove('open');
   $('drawer').classList.remove('open');
+  if ($('loginSaveResult')) $('loginSaveResult').textContent = '';
+  if ($('noteSaveResult')) $('noteSaveResult').textContent = '';
+  if ($('cardSaveResult')) $('cardSaveResult').textContent = '';
+  if ($('noteDrawer')) $('noteDrawer').classList.remove('open');
+  if ($('cardDrawer')) $('cardDrawer').classList.remove('open');
 }
 
 $('overlay').onclick = closeDrawer;
 $('drawerCancel').onclick = closeDrawer;
-$('addBtn').onclick = () => openDrawer(null);
 
 $('togglePassword').onclick = () => {
   const input = $('editPassword');
@@ -377,48 +528,547 @@ $('drawerSave').onclick = async () => {
   const username = $('editUsername').value.trim();
   const password = $('editPassword').value;
   const notes = $('editNotes').value;
-  const favorite = $('editFavorite').checked;
-  
+  const favorite = editingId
+    ? Boolean(managerCredentials.find(item => item.id === editingId)?.favorite)
+    : false;
+  const status = $('loginSaveResult');
   if (!url || !username || !password) {
-    alert('Vui lòng điền đầy đủ Website (URL), Tên đăng nhập và Mật khẩu.');
+    status.style.color = '#e11d48';
+    status.textContent = 'Vui lòng điền Website, Tên đăng nhập và Mật khẩu.';
     return;
   }
-  
+  status.style.color = '#6b7280';
+  status.textContent = 'Đang lưu…';
   const res = await send({ type: 'UPDATE_ITEM', id, title, url, username, password, notes, favorite });
   if (res.ok) {
-    closeDrawer();
+    status.style.color = '#22a65a';
+    status.textContent = '✓ Đã lưu thông tin tài khoản thành công.';
     await loadManager();
     await refreshSyncStatus(res.syncStatus);
+    setTimeout(closeDrawer, 500);
   } else {
-    alert(res.error);
+    status.style.color = '#e11d48';
+    status.textContent = `Không thể lưu: ${res.error || 'Lỗi không xác định.'}`;
   }
 };
 
 $('deleteBtn').onclick = async () => {
   const id = $('editId').value;
+  const status = $('loginSaveResult');
   if (!id) return;
-  if (confirm('Bạn có chắc chắn muốn xóa tài khoản này?')) {
+  if (await confirmDelete('Bạn có đồng ý xóa thông tin tài khoản này không?')) {
+    status.style.color = '#6b7280';
+    status.textContent = 'Đang xóa…';
     const res = await send({ type: 'DELETE', id });
     if (res.ok) {
-      closeDrawer();
+      status.style.color = '#22a65a';
+      status.textContent = '✓ Đã xóa tài khoản.';
       await loadManager();
       await refreshSyncStatus(res.syncStatus);
+      setTimeout(closeDrawer, 500);
     } else {
-      alert(res.error);
+      status.style.color = '#e11d48';
+      status.textContent = `Không thể xóa: ${res.error || 'Lỗi không xác định.'}`;
     }
   }
 };
 
+function renderNotes() {
+  const container = $('notesGrid');
+  if (!container) return;
+  if (!managerNotes.length) {
+    container.innerHTML = '<div style="grid-column:1/-1;padding:32px;color:var(--apple-muted);text-align:center;font-size:13px" data-i18n="noNotesMsg">Chưa có ghi chú bảo mật nào.</div>';
+    return;
+  }
+
+  container.replaceChildren(...managerNotes.map(item => {
+    const card = document.createElement('article');
+    card.className = 'vault-item-card note-item-card';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `Xem ghi chú ${item.title || 'không tiêu đề'}`);
+    card.onclick = () => openNoteDetail(item);
+    card.onkeydown = event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openNoteDetail(item);
+      }
+    };
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex; align-items:center; gap:10px;';
+    const icon = document.createElement('div');
+    icon.style.cssText = 'width:34px;height:34px;border-radius:9px;background:#fff7db;display:grid;place-items:center;flex:0 0 34px;';
+    icon.textContent = '📝';
+    const title = document.createElement('strong');
+    title.style.cssText = 'font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    title.textContent = item.title || 'Ghi chú mới';
+    header.append(icon, title);
+
+    const body = document.createElement('p');
+    body.className = 'note-private-preview';
+    body.setAttribute('aria-label', 'Nội dung ghi chú đang được ẩn');
+    body.textContent = '••••••••••••••••';
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;margin-top:auto;';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'item-action-btn';
+    editBtn.textContent = 'Sửa';
+    editBtn.onclick = event => {
+      event.stopPropagation();
+      openNoteDrawer(item);
+    };
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'item-action-btn danger';
+    deleteBtn.textContent = 'Xóa';
+    deleteBtn.onclick = async event => {
+      event.stopPropagation();
+      if (!await confirmDelete('Bạn có đồng ý xóa ghi chú này không?')) return;
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = 'Đang xóa…';
+      const res = await send({ type: 'DELETE_NOTE', id: item.id });
+      if (res.ok) {
+        await loadManager();
+        await refreshSyncStatus(res.syncStatus);
+      } else {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = 'Xóa';
+        alert(res.error);
+      }
+    };
+    actions.append(editBtn, deleteBtn);
+    card.append(header, body, actions);
+    return card;
+  }));
+}
+
+function openNoteDetail(item) {
+  const modal = $('noteDetailModal');
+  if (!modal) return;
+  $('noteDetailTitle').textContent = item.title || 'GHI CHÚ';
+  $('noteDetailContent').textContent = item.notes || 'Không có nội dung.';
+  modal.classList.remove('hidden');
+  $('noteDetailCopy').onclick = async () => {
+    await navigator.clipboard.writeText(item.notes || '');
+    $('noteDetailCopy').textContent = '✓ Đã sao chép';
+    setTimeout(() => { $('noteDetailCopy').textContent = '📋 Sao chép nội dung'; }, 1500);
+  };
+}
+
+function closeNoteDetail() {
+  if ($('noteDetailModal')) $('noteDetailModal').classList.add('hidden');
+}
+
+if ($('noteDetailClose')) $('noteDetailClose').onclick = closeNoteDetail;
+if ($('noteDetailModal')) $('noteDetailModal').onclick = event => {
+  if (event.target === $('noteDetailModal')) closeNoteDetail();
+};
+
+function openNoteDrawer(item = null) {
+  $('overlay').classList.add('open');
+  $('noteDrawer').classList.add('open');
+  if ($('noteSaveResult')) $('noteSaveResult').textContent = '';
+  if (item) {
+    $('noteDrawerTitle').textContent = 'Sửa ghi chú bảo mật';
+    $('editNoteId').value = item.id;
+    $('editNoteTitle').value = item.title || '';
+    $('editNoteContent').value = item.notes || '';
+  } else {
+    $('noteDrawerTitle').textContent = 'Thêm ghi chú bảo mật';
+    $('editNoteId').value = '';
+    $('editNoteTitle').value = '';
+    $('editNoteContent').value = '';
+  }
+}
+
+function closeNoteDrawer() {
+  $('overlay').classList.remove('open');
+  $('noteDrawer').classList.remove('open');
+  if ($('noteSaveResult')) $('noteSaveResult').textContent = '';
+}
+
+if ($('noteDrawerSave')) {
+  $('noteDrawerSave').onclick = async () => {
+    const id = $('editNoteId').value;
+    const title = $('editNoteTitle').value.trim();
+    const notes = $('editNoteContent').value.trim();
+    const status = $('noteSaveResult');
+    if (!title && !notes) {
+      status.style.color = '#e11d48';
+      status.textContent = 'Vui lòng nhập tiêu đề hoặc nội dung ghi chú.';
+      return;
+    }
+    status.style.color = '#6b7280';
+    status.textContent = 'Đang lưu…';
+    const res = await send({ type: 'SAVE_NOTE', id, title: title || 'Ghi chú mới', notes, favorite: false });
+    if (res.ok) {
+      status.style.color = '#22a65a';
+      status.textContent = '✓ Đã lưu ghi chú thành công.';
+      await loadManager();
+      await refreshSyncStatus(res.syncStatus);
+      setTimeout(closeNoteDrawer, 500);
+    } else {
+      status.style.color = '#e11d48';
+      status.textContent = `Không thể lưu: ${res.error || 'Lỗi không xác định.'}`;
+    }
+  };
+}
+
+if ($('addNoteBtn')) {
+  $('addNoteBtn').onclick = () => openNoteDrawer(null);
+}
+
+function renderCards() {
+  const container = $('cardsGrid');
+  if (!container) return;
+  if (!managerCards.length) {
+    container.innerHTML = '<div style="grid-column:1/-1;padding:32px;color:var(--apple-muted);text-align:center;font-size:13px" data-i18n="noCardsMsg">Chưa có thẻ thanh toán nào.</div>';
+    return;
+  }
+
+  container.replaceChildren(...managerCards.map(item => {
+    const card = document.createElement('article');
+    card.className = 'vault-item-card payment-item-card';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `Xem thẻ ${item.title || 'thanh toán'}`);
+    card.onclick = () => openCardDetail(item);
+    card.onkeydown = event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openCardDetail(item);
+      }
+    };
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight:700; font-size:14px; color:#f8fafc; word-break:break-all;';
+    title.textContent = item.title || 'Thẻ ATM / Credit';
+
+    const brandIcon = document.createElement('div');
+    brandIcon.style.cssText = 'font-size:20px;';
+    brandIcon.textContent = '💳';
+
+    header.append(title, brandIcon);
+
+    const num = document.createElement('div');
+    num.style.cssText = 'font-family:monospace; font-size:15px; letter-spacing:2px; color:#38bdf8; font-weight:700;';
+    const rawNum = String(item.cardNumber || '').replace(/\D/g, '');
+    const masked = rawNum ? `•••• •••• •••• ${rawNum.slice(-4)}` : '•••• •••• •••• ••••';
+    num.textContent = masked;
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'display:flex; justify-content:space-between; font-size:11px; color:#94a3b8;';
+    meta.innerHTML = `<span>Chủ thẻ: <strong style="color:#e2e8f0">${item.cardholderName || '—'}</strong></span><span>Hạn: <strong style="color:#e2e8f0">${item.expMonth || '--'}/${item.expYear || '--'}</strong></span>`;
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex; gap:8px; margin-top:4px;';
+
+    const copyNumBtn = document.createElement('button');
+    copyNumBtn.style.cssText = 'flex:1; padding:6px; border-radius:6px; border:0; background:rgba(255,255,255,0.15); color:#fff; font-size:11px; font-weight:600; cursor:pointer;';
+    copyNumBtn.textContent = '📋 Copy số thẻ';
+    copyNumBtn.onclick = event => {
+      event.stopPropagation();
+      navigator.clipboard.writeText(rawNum);
+      copyNumBtn.textContent = '✓ Đã copy';
+      setTimeout(() => { copyNumBtn.textContent = '📋 Sao chép'; }, 1500);
+    };
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'item-action-btn dark';
+    editBtn.textContent = 'Sửa';
+    editBtn.onclick = event => {
+      event.stopPropagation();
+      openCardDrawer(item);
+    };
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'item-action-btn danger-dark';
+    deleteBtn.textContent = 'Xóa';
+    deleteBtn.onclick = async event => {
+      event.stopPropagation();
+      if (!await confirmDelete('Bạn có đồng ý xóa thẻ thanh toán này không?')) return;
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = 'Đang xóa…';
+      const res = await send({ type: 'DELETE_CARD', id: item.id });
+      if (res.ok) {
+        await loadManager();
+        await refreshSyncStatus(res.syncStatus);
+      } else {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = 'Xóa';
+        alert(res.error);
+      }
+    };
+
+    actions.append(copyNumBtn, editBtn, deleteBtn);
+    card.append(header, num, meta, actions);
+    return card;
+  }));
+}
+
+function openCardDetail(item) {
+  const modal = $('cardDetailModal');
+  if (!modal) return;
+  const rawNumber = String(item.cardNumber || '').replace(/\s+/g, '');
+  const rawCvv = String(item.cvv || '');
+  $('cardDetailTitle').textContent = item.title || 'NGÂN HÀNG';
+  $('cardDetailNumber').textContent = rawNumber.replace(/(.{4})/g, '$1 ').trim() || '•••• •••• •••• ••••';
+  $('cardDetailHolder').textContent = item.cardholderName || '—';
+  $('cardDetailExpiry').textContent = `${item.expMonth || '--'}/${item.expYear || '--'}`;
+  $('cardDetailCvv').textContent = '•'.repeat(Math.max(rawCvv.length, 3));
+  $('cardDetailCvvToggle').setAttribute('aria-pressed', 'false');
+  $('cardDetailCvvToggle').onclick = event => {
+    event.stopPropagation();
+    const visible = $('cardDetailCvvToggle').getAttribute('aria-pressed') === 'true';
+    $('cardDetailCvv').textContent = visible ? '•'.repeat(Math.max(rawCvv.length, 3)) : (rawCvv || '—');
+    $('cardDetailCvvToggle').setAttribute('aria-pressed', String(!visible));
+    $('cardDetailCvvToggle').setAttribute('aria-label', visible ? 'Hiện mã CVV' : 'Ẩn mã CVV');
+  };
+  const bindCopy = (buttonId, value) => {
+    const button = $(buttonId);
+    if (!button) return;
+    button.onclick = async event => {
+      event.stopPropagation();
+      await navigator.clipboard.writeText(String(value || ''));
+      button.classList.add('copied');
+      button.setAttribute('aria-label', 'Đã sao chép');
+      setTimeout(() => {
+        button.classList.remove('copied');
+        button.setAttribute('aria-label', button.title || 'Sao chép');
+      }, 1400);
+    };
+  };
+  bindCopy('copyCardNumber', rawNumber);
+  bindCopy('copyCardHolder', item.cardholderName || '');
+  bindCopy('copyCardExpiry', `${item.expMonth || ''}/${item.expYear || ''}`);
+  bindCopy('copyCardCvv', rawCvv);
+  modal.classList.remove('hidden');
+}
+
+function closeCardDetail() {
+  if ($('cardDetailModal')) $('cardDetailModal').classList.add('hidden');
+}
+
+if ($('cardDetailClose')) $('cardDetailClose').onclick = closeCardDetail;
+if ($('cardDetailModal')) $('cardDetailModal').onclick = event => {
+  if (event.target === $('cardDetailModal')) closeCardDetail();
+};
+
+function openCardDrawer(item = null) {
+  $('overlay').classList.add('open');
+  $('cardDrawer').classList.add('open');
+  if ($('cardSaveResult')) $('cardSaveResult').textContent = '';
+  $('editCardCvv').type = 'password';
+  $('toggleCardCvv').setAttribute('aria-pressed', 'false');
+  $('toggleCardCvv').setAttribute('aria-label', 'Hiện mã CVV');
+  if (item) {
+    $('cardDrawerTitle').textContent = 'Sửa thẻ thanh toán';
+    $('editCardId').value = item.id;
+    $('editCardTitle').value = item.title || '';
+    $('editCardName').value = item.cardholderName || '';
+    $('editCardNumber').value = item.cardNumber || '';
+    $('editCardExpMonth').value = item.expMonth || '';
+    $('editCardExpYear').value = item.expYear || '';
+    $('editCardCvv').value = item.cvv || '';
+  } else {
+    $('cardDrawerTitle').textContent = 'Thêm thẻ thanh toán';
+    $('editCardId').value = '';
+    $('editCardTitle').value = '';
+    $('editCardName').value = '';
+    $('editCardNumber').value = '';
+    $('editCardExpMonth').value = '';
+    $('editCardExpYear').value = '';
+    $('editCardCvv').value = '';
+  }
+}
+
+function closeCardDrawer() {
+  $('overlay').classList.remove('open');
+  $('cardDrawer').classList.remove('open');
+  if ($('cardSaveResult')) $('cardSaveResult').textContent = '';
+}
+
+if ($('cardDrawerCancel')) $('cardDrawerCancel').onclick = closeCardDrawer;
+if ($('toggleCardCvv')) $('toggleCardCvv').onclick = () => {
+  const field = $('editCardCvv');
+  const button = $('toggleCardCvv');
+  const visible = field.type === 'text';
+  field.type = visible ? 'password' : 'text';
+  button.setAttribute('aria-pressed', String(!visible));
+  button.setAttribute('aria-label', visible ? 'Hiện mã CVV' : 'Ẩn mã CVV');
+};
+if ($('cardDrawerSave')) {
+  $('cardDrawerSave').onclick = async () => {
+    const id = $('editCardId').value;
+    const title = $('editCardTitle').value.trim();
+    const cardholderName = $('editCardName').value.trim();
+    const cardNumber = $('editCardNumber').value.trim();
+    const expMonth = $('editCardExpMonth').value.trim();
+    const expYear = $('editCardExpYear').value.trim();
+    const cvv = $('editCardCvv').value.trim();
+    const status = $('cardSaveResult');
+    if (!cardNumber) {
+      status.style.color = '#e11d48';
+      status.textContent = 'Vui lòng nhập số thẻ.';
+      return;
+    }
+    status.style.color = '#6b7280';
+    status.textContent = 'Đang lưu…';
+    const res = await send({ type: 'SAVE_CARD', id, title: title || 'Thẻ ATM', cardholderName, cardNumber, expMonth, expYear, cvv, favorite: false });
+    if (res.ok) {
+      status.style.color = '#22a65a';
+      status.textContent = '✓ Đã lưu thẻ thành công.';
+      await loadManager();
+      await refreshSyncStatus(res.syncStatus);
+      setTimeout(closeCardDrawer, 500);
+    } else {
+      status.style.color = '#e11d48';
+      status.textContent = `Không thể lưu: ${res.error || 'Lỗi không xác định.'}`;
+    }
+  };
+}
+
+if ($('addCardBtn')) {
+  $('addCardBtn').onclick = () => openCardDrawer(null);
+}
+
+function renderIdentities() {
+  // Personal identity data remains in the Vault for compatibility, but its editor UI was intentionally removed.
+}
+
+function renderTrash() {
+  const container = $('trashGrid');
+  if (!container) return;
+  if (!managerTrash.length) {
+    container.innerHTML = '<div class="trash-empty" data-i18n="noTrashMsg">Thùng rác rỗng.</div>';
+    return;
+  }
+
+  container.replaceChildren(...managerTrash.map(item => {
+    const original = item.originalItem || {};
+    const type = String(item.itemType || 'item').toLowerCase();
+    const card = document.createElement('article');
+    card.className = `trash-item trash-${type}`;
+
+    const date = document.createElement('span');
+    date.className = 'trash-date';
+    date.textContent = `Đã xóa ${new Date(item.deletedAt).toLocaleDateString('vi-VN')}`;
+
+    const content = document.createElement('div');
+    content.className = 'trash-content';
+    if (type === 'card') {
+      const digits = String(original.cardNumber || '').replace(/\D/g, '');
+      content.innerHTML = `<div class="trash-card-top"><strong>${escapeHtml(original.title || 'NGÂN HÀNG')}</strong><span>💳</span></div><div class="trash-card-number">•••• •••• •••• ${escapeHtml(digits.slice(-4) || '••••')}</div><div class="trash-card-meta"><span>${escapeHtml(original.cardholderName || '—')}</span><span>${escapeHtml(original.expMonth || '--')}/${escapeHtml(original.expYear || '--')}</span></div>`;
+    } else if (type === 'note') {
+      content.innerHTML = `<div class="trash-note-title"><span>📝</span><strong>${escapeHtml(original.title || 'GHI CHÚ')}</strong></div><p class="trash-private-note">••••••••••••••••</p>`;
+    } else {
+      const title = original.title || original.username || original.account || 'Không tiêu đề';
+      const detail = original.username || original.url || original.issuer || '';
+      content.innerHTML = `<div class="trash-login-title"><span>${type === 'otp' ? '⏱️' : '🔑'}</span><strong>${escapeHtml(title)}</strong></div><p>${escapeHtml(detail)}</p>`;
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'trash-actions';
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'trash-restore';
+    restoreBtn.textContent = 'Khôi phục';
+    restoreBtn.onclick = async () => {
+      const accepted = await confirmAction({
+        title: 'Khôi phục thông tin?',
+        message: `Bạn có đồng ý khôi phục ${trashTypeLabel(type)} này không?`,
+        acceptText: 'Đồng ý khôi phục',
+        cancelText: 'Không khôi phục',
+        tone: 'restore'
+      });
+      if (!accepted) return;
+      restoreBtn.disabled = true;
+      restoreBtn.textContent = 'Đang khôi phục…';
+      const res = await send({ type: 'RESTORE_TRASH', id: item.id });
+      if (res.ok) {
+        await loadManager();
+        await refreshSyncStatus(res.syncStatus);
+      } else {
+        restoreBtn.disabled = false;
+        restoreBtn.textContent = 'Khôi phục';
+        alert(res.error);
+      }
+    };
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'trash-delete';
+    deleteBtn.textContent = 'Xóa vĩnh viễn';
+    deleteBtn.onclick = async () => {
+      const accepted = await confirmAction({
+        title: 'Xóa vĩnh viễn?',
+        message: `Dữ liệu ${trashTypeLabel(type)} sẽ không thể khôi phục sau khi xóa.`,
+        acceptText: 'Đồng ý xóa',
+        cancelText: 'Không xóa',
+        tone: 'delete'
+      });
+      if (!accepted) return;
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = 'Đang xóa…';
+      const res = await send({ type: 'DELETE_PERMANENTLY', id: item.id });
+      if (res.ok) {
+        await loadManager();
+        await refreshSyncStatus(res.syncStatus);
+      } else {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = 'Xóa vĩnh viễn';
+        alert(res.error);
+      }
+    };
+    actions.append(restoreBtn, deleteBtn);
+    card.append(date, content, actions);
+    return card;
+  }));
+}
+
+function trashTypeLabel(type) {
+  return ({ card: 'thẻ thanh toán', note: 'ghi chú', credential: 'tài khoản', login: 'tài khoản', otp: 'mã OTP' })[type] || 'thông tin';
+}
+
+if ($('emptyTrashBtn')) {
+  $('emptyTrashBtn').onclick = async () => {
+    if (!managerTrash.length) return;
+    if (confirm(t('emptyTrashConfirm', 'Bạn có chắc chắn muốn xóa vĩnh viễn tất cả mục trong thùng rác không?'))) {
+      const res = await send({ type: 'EMPTY_TRASH' });
+      if (res.ok) {
+        await loadManager();
+        await refreshSyncStatus(res.syncStatus);
+      } else {
+        alert(res.error);
+      }
+    }
+  };
+}
+
 // Sidebar Navigation
 const sections = {
   menuLogins: $('loginsSection'),
-  menuSecurity: $('securitySection'),
+  menuNotes: $('notesSection'),
+  menuCards: $('cardsSection'),
   menuIdentity: $('identitySection'),
+  menuSecurity: $('securitySection'),
+  menuTrash: $('trashSection'),
   menuSettings: $('settingsSection')
+};
+
+let currentActiveMenu = 'menuLogins';
+
+$('addBtn').onclick = () => {
+  if (currentActiveMenu === 'menuNotes') openNoteDrawer(null);
+  else if (currentActiveMenu === 'menuCards') openCardDrawer(null);
+  else openDrawer(null);
 };
 
 Object.keys(sections).forEach(menuId => {
   $(menuId).onclick = () => {
+    currentActiveMenu = menuId;
     Object.keys(sections).forEach(id => {
       $(id).classList.remove('active');
       sections[id].classList.add('hidden');
@@ -426,9 +1076,10 @@ Object.keys(sections).forEach(menuId => {
     $(menuId).classList.add('active');
     sections[menuId].classList.remove('hidden');
     
-    if (menuId === 'menuLogins') {
+    if (['menuLogins', 'menuNotes', 'menuCards'].includes(menuId)) {
       $('addBtn').classList.remove('hidden');
-      $('subTabsBar').classList.remove('hidden');
+      if (menuId === 'menuLogins') $('subTabsBar').classList.remove('hidden');
+      else $('subTabsBar').classList.add('hidden');
     } else {
       $('addBtn').classList.add('hidden');
       $('subTabsBar').classList.add('hidden');
@@ -459,13 +1110,22 @@ subTabs.forEach(tab => {
   };
 });
 
+const settingsToolSelect = $('settingsToolSelect');
+if (settingsToolSelect) {
+  settingsToolSelect.onchange = () => {
+    const selectedTool = settingsToolSelect.value;
+    document.querySelectorAll('.settings-tool-panel').forEach(panel => {
+      panel.classList.toggle('hidden', panel.dataset.settingsTool !== selectedTool);
+    });
+  };
+}
+
 // CSV Import & Export logic
 $('csvFile').onchange = async event => {
   const generation = ++csvReadGeneration;
   const file = event.target.files?.[0];
   csvText = '';
   importValidCount = 0;
-  $('previewButton').disabled = true;
   $('importButton').disabled = true;
   $('importResult').textContent = '';
   if (!file) {
@@ -479,73 +1139,172 @@ $('csvFile').onchange = async event => {
     event.target.value = '';
     return;
   }
-  $('csvFileName').textContent = `${file.name} · đang đọc…`;
+  $('csvFileName').textContent = `${file.name} · đang kiểm tra…`;
   try {
     const text = await file.text();
     if (generation !== csvReadGeneration) return;
     if (!text.trim()) throw new Error('Tệp CSV đang trống.');
+    const response = await send({ type: 'IMPORT_PREVIEW', csv: text });
+    if (response?.ok === false) throw new Error(response.error || 'Tệp CSV không hợp lệ.');
     csvText = text;
+    importValidCount = response.preview?.valid || 0;
     $('csvFileName').textContent = file.name;
-    $('previewButton').disabled = false;
+    $('importButton').disabled = importValidCount === 0;
+    $('importResult').style.color = importValidCount ? 'var(--apple-green)' : '#e11d48';
+    $('importResult').textContent = importValidCount
+      ? `Đã kiểm tra: ${importValidCount} tài khoản hợp lệ, ${response.preview?.duplicates || 0} mục trùng.`
+      : 'Tệp CSV không có tài khoản hợp lệ để nhập.';
   } catch (error) {
     if (generation !== csvReadGeneration) return;
     csvText = '';
-    $('csvFileName').textContent = `${file.name} · không đọc được`;
+    $('csvFileName').textContent = `${file.name} · không hợp lệ`;
     $('importResult').style.color = '#e11d48';
     $('importResult').textContent = error?.message || 'Không thể đọc tệp CSV.';
     event.target.value = '';
   }
 };
 
-$('previewButton').onclick = async () => {
-  if (!csvText) return $('importResult').textContent = 'Hãy chọn file CSV.';
-  const response = await send({ type: 'IMPORT_PREVIEW', csv: csvText });
-  if (!response.ok) return $('importResult').textContent = response.error;
-  const p = response.preview;
-  importValidCount = p.valid;
-  $('importResult').textContent = `Tổng: ${p.total}\nHợp lệ: ${p.valid}\nTrùng sẽ cập nhật: ${p.duplicates}\nLỗi: ${p.errors.length}${p.errors.slice(0, 5).map(e => `\n• Dòng ${e.row}: ${e.reason}`).join('')}`;
-  $('importButton').disabled = p.valid === 0;
-};
-
 $('importButton').onclick = async () => {
-  if (!confirm(`Nhập ${importValidCount} tài khoản hợp lệ vào vault?`)) return;
-  
-  $('importButton').disabled = true;
-  $('importButton').textContent = 'Đang nhập...';
-  $('importResult').style.color = 'var(--apple-accent)';
-  $('importResult').style.fontWeight = '500';
-  $('importResult').textContent = `⏳ Đang nhập và mã hóa ${importValidCount} tài khoản vào kho bảo mật. Vui lòng chờ...`;
-  
-  const response = await send({ type: 'IMPORT_COMMIT', csv: csvText });
-  
-  $('importButton').textContent = 'Nhập vào Vault';
-  $('importButton').disabled = false;
-  
-  if (response.ok) {
-    $('importResult').style.color = 'var(--apple-green)';
-    $('importResult').style.fontWeight = '600';
-    $('importResult').textContent = `✅ Đã nhập xong! Đã nhập/cập nhật thành công ${response.imported} tài khoản vào kho mật khẩu.`;
+  if (!csvText || !importValidCount) return;
+  const accepted = await confirmAction({
+    title: 'Nhập dữ liệu CSV?',
+    message: `Bạn có đồng ý nhập ${importValidCount} tài khoản hợp lệ vào Vault không?`,
+    acceptText: 'Đồng ý nhập CSV',
+    cancelText: 'Không nhập',
+    tone: 'restore'
+  });
+  if (!accepted) return;
+  const button = $('importButton');
+  const result = $('importResult');
+  button.disabled = true;
+  button.textContent = 'Đang nhập…';
+  result.style.color = 'var(--apple-accent)';
+  result.textContent = `Đang mã hóa và nhập ${importValidCount} tài khoản…`;
+  try {
+    const response = await send({ type: 'IMPORT_COMMIT', csv: csvText });
+    if (response?.ok === false) throw new Error(response.error || 'Không thể nhập CSV.');
+    result.style.color = 'var(--apple-green)';
+    result.textContent = `Đã nhập/cập nhật ${response.imported ?? 0} tài khoản.`;
+    $('csvFile').value = '';
+    $('csvFileName').textContent = 'Chưa chọn tệp';
+    csvText = '';
+    importValidCount = 0;
     await loadManager();
-    await refreshSyncStatus();
-  } else {
-    $('importResult').style.color = '#e11d48';
-    $('importResult').style.fontWeight = '600';
-    $('importResult').textContent = `❌ Nhập thất bại: ${response.error}`;
+    await refreshSyncStatus(response?.syncStatus);
+  } catch (error) {
+    result.style.color = '#e11d48';
+    result.textContent = `Không thể nhập CSV: ${error?.message || 'Lỗi không xác định.'}`;
+  } finally {
+    button.textContent = 'Nhập CSV';
+    button.disabled = !csvText;
   }
 };
 
 $('exportButton').onclick = async () => {
-  if (!confirm(
-    'CSV sẽ chứa mật khẩu dạng rõ và có thể bị Excel/Google Sheets diễn giải như công thức. '
-    + 'Chỉ dùng tệp để chuyển sang password manager và không mở bằng ứng dụng bảng tính. Tiếp tục?'
-  )) return;
-  const response = await send({ type: 'EXPORT_CSV', masterPassword: $('exportPassword').value });
-  if (!response.ok) return $('exportResult').textContent = response.error;
-  downloadText(response.csv, `aegis-lastpass-${dateStamp()}.csv`, 'text/csv;charset=utf-8');
-  $('exportResult').textContent = `Đã xuất ${response.count} tài khoản.`;
+  const password = $('exportPassword').value;
+  const result = $('exportResult');
+  const button = $('exportButton');
+  result.style.color = '#e11d48';
+  result.textContent = '';
+  if (!password) {
+    result.textContent = 'Nhập mật khẩu chính để xuất CSV.';
+    $('exportPassword').focus();
+    return;
+  }
+  const accepted = await confirmAction({
+    title: 'Xuất dữ liệu CSV?',
+    message: 'CSV chứa mật khẩu dạng rõ. Chỉ dùng tệp để chuyển sang password manager và không mở bằng ứng dụng bảng tính.',
+    acceptText: 'Đồng ý xuất CSV',
+    cancelText: 'Không xuất',
+    tone: 'restore'
+  });
+  if (!accepted) return;
+  button.disabled = true;
+  button.textContent = 'Đang xuất…';
+  result.style.color = 'var(--apple-accent)';
+  result.textContent = 'Đang xác minh và chuẩn bị tệp CSV…';
+  try {
+    const response = await send({ type: 'EXPORT_CSV', masterPassword: password });
+    if (response?.ok === false || typeof response?.csv !== 'string') {
+      throw new Error(response?.error || 'Không thể xuất tệp CSV.');
+    }
+    await downloadText(response.csv, `aegis-vault-${dateStamp()}.csv`, 'text/csv;charset=utf-8');
+    result.style.color = 'var(--apple-green)';
+    result.textContent = `Đã xuất ${response.count ?? 0} tài khoản.`;
+    $('exportPassword').value = '';
+  } catch (error) {
+    result.style.color = '#e11d48';
+    result.textContent = `Không thể xuất CSV: ${error?.message || 'Lỗi không xác định.'}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Xuất CSV';
+  }
 };
+function wait(delayMs) {
+  return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+function confirmAction({
+  title = 'Xác nhận thao tác?',
+  message = 'Bạn có muốn tiếp tục không?',
+  acceptText = 'Đồng ý',
+  cancelText = 'Hủy',
+  tone = 'delete'
+} = {}) {
+  return new Promise(resolve => {
+    const modal = $('deleteConfirmModal');
+    const titleNode = $('deleteConfirmTitle');
+    const messageNode = $('deleteConfirmMessage');
+    const iconNode = modal?.querySelector('.confirm-icon');
+    const cancelBtn = $('deleteConfirmCancel');
+    const acceptBtn = $('deleteConfirmAccept');
+    if (!modal || !cancelBtn || !acceptBtn) {
+      resolve(false);
+      return;
+    }
+    titleNode.textContent = title;
+    messageNode.textContent = message;
+    cancelBtn.textContent = cancelText;
+    acceptBtn.textContent = acceptText;
+    iconNode.textContent = tone === 'restore' ? '↻' : '🗑️';
+    modal.dataset.tone = tone;
+    modal.classList.remove('hidden');
+    const finish = accepted => {
+      modal.classList.add('hidden');
+      cancelBtn.onclick = null;
+      acceptBtn.onclick = null;
+      modal.onclick = null;
+      resolve(accepted);
+    };
+    cancelBtn.onclick = () => finish(false);
+    acceptBtn.onclick = () => finish(true);
+    modal.onclick = event => {
+      if (event.target === modal) finish(false);
+    };
+    cancelBtn.focus();
+  });
+}
+
+function confirmDelete(message = 'Bạn có đồng ý xóa thông tin này không?') {
+  return confirmAction({ title: 'Xóa thông tin?', message, acceptText: 'Đồng ý xóa', cancelText: 'Không xóa', tone: 'delete' });
+}
 function dateStamp(){return new Date().toISOString().slice(0,10);}
-function downloadText(text,name,type='text/plain;charset=utf-8'){const url=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+async function downloadText(text, name, type = 'text/plain;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  try {
+    if (!chrome.downloads?.download) {
+      throw new Error('Aegis chưa được cấp quyền tải tệp. Hãy tải lại extension.');
+    }
+    await chrome.downloads.download({
+      url,
+      filename: name,
+      saveAs: false,
+      conflictAction: 'uniquify'
+    });
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+}
 
 function formatBackupCounts(counts) {
   if (typeof counts === 'number') return `${counts} mục`;
@@ -582,7 +1341,7 @@ $('backupExportButton').onclick = async () => {
   const text = typeof response.backup === 'string'
     ? response.backup
     : JSON.stringify(response.backup, null, 2);
-  downloadText(text, `aegis-vault-backup-${dateStamp()}.aegis`, 'application/json;charset=utf-8');
+  await downloadText(text, `aegis-vault-backup-${dateStamp()}.json`, 'application/json;charset=utf-8');
   result.style.color = 'var(--apple-green)';
   result.textContent = `Đã tải backup gồm ${formatBackupCounts(response.counts)}.`;
   $('backupExportPassword').value = '';
@@ -604,9 +1363,9 @@ $('recoveryExportButton').onclick = async () => {
   const text = typeof response.backup === 'string'
     ? response.backup
     : JSON.stringify(response.backup, null, 2);
-  downloadText(
+  await downloadText(
     text,
-    `aegis-vault-pre-cloud-recovery-${dateStamp()}.aegis`,
+    `aegis-vault-pre-cloud-recovery-${dateStamp()}.json`,
     'application/json;charset=utf-8'
   );
   result.style.color = 'var(--apple-green)';
@@ -646,6 +1405,8 @@ $('backupFile').onchange = async event => {
 $('backupImportButton').onclick = async () => {
   const password = $('backupImportPassword').value;
   const result = $('backupImportResult');
+  const button = $('backupImportButton');
+  result.textContent = '';
   if (!backupImportPayload) {
     result.style.color = '#e11d48';
     result.textContent = 'Hãy chọn tệp backup Aegis.';
@@ -654,38 +1415,46 @@ $('backupImportButton').onclick = async () => {
   if (!password) {
     result.style.color = '#e11d48';
     result.textContent = 'Nhập mật khẩu chính của bản backup.';
+    $('backupImportPassword').focus();
     return;
   }
-  if (!confirm('Khôi phục sẽ thay thế Vault hiện tại bằng dữ liệu trong tệp đã chọn. Bạn có chắc muốn tiếp tục?')) return;
+  const accepted = await confirmAction({
+    title: 'Khôi phục Vault?',
+    message: 'Dữ liệu trong tệp sẽ thay thế Vault hiện tại rồi được đồng bộ lại. Bạn có đồng ý tiếp tục không?',
+    acceptText: 'Đồng ý khôi phục',
+    cancelText: 'Không khôi phục',
+    tone: 'restore'
+  });
+  if (!accepted) return;
 
-  const button = $('backupImportButton');
   button.disabled = true;
   button.textContent = 'Đang khôi phục…';
   result.style.color = 'var(--apple-accent)';
-  result.textContent = 'Đang xác minh và khôi phục dữ liệu mã hóa…';
-  const response = await send({
-    type: 'IMPORT_ENCRYPTED_BACKUP',
-    masterPassword: password,
-    backup: backupImportPayload
-  });
-  button.textContent = 'Khôi phục Vault';
-
-  if (response?.ok === false) {
-    button.disabled = false;
+  result.textContent = 'Đang xác minh mật khẩu và khôi phục dữ liệu mã hóa…';
+  try {
+    const response = await send({
+      type: 'IMPORT_ENCRYPTED_BACKUP',
+      masterPassword: password,
+      backup: backupImportPayload
+    });
+    if (response?.ok === false) {
+      throw new Error(response.error || 'Không thể khôi phục backup.');
+    }
+    result.style.color = 'var(--apple-green)';
+    result.textContent = `Đã khôi phục ${formatBackupCounts(response?.counts)}.`;
+    $('backupImportPassword').value = '';
+    $('backupFile').value = '';
+    $('backupFileName').textContent = 'Chưa chọn tệp';
+    backupImportPayload = null;
+    await loadManager();
+    await refreshSyncStatus(response?.syncStatus);
+  } catch (error) {
     result.style.color = '#e11d48';
-    result.textContent = response.error || 'Không thể khôi phục backup.';
-    return;
+    result.textContent = `Không thể khôi phục: ${error?.message || 'Lỗi không xác định.'}`;
+  } finally {
+    button.textContent = 'Khôi phục Vault';
+    button.disabled = !backupImportPayload;
   }
-
-  result.style.color = 'var(--apple-green)';
-  result.textContent = `Đã khôi phục ${formatBackupCounts(response?.counts)}.`;
-  $('backupImportPassword').value = '';
-  $('backupFile').value = '';
-  $('backupFileName').textContent = 'Chưa chọn tệp';
-  backupImportPayload = null;
-  button.disabled = true;
-  await loadManager();
-  await refreshSyncStatus(response?.syncStatus);
 };
 
 $('otpTextFile').onchange = async event => {
@@ -693,7 +1462,6 @@ $('otpTextFile').onchange = async event => {
   const file = event.target.files?.[0];
   otpText = '';
   otpImportValidCount = 0;
-  $('otpPreviewBtn').disabled = true;
   $('otpImportBtn').disabled = true;
   $('otpImportResult').textContent = '';
   if (!file) {
@@ -707,53 +1475,105 @@ $('otpTextFile').onchange = async event => {
     event.target.value = '';
     return;
   }
-  $('otpTextFileName').textContent = `${file.name} · đang đọc…`;
+  $('otpTextFileName').textContent = `${file.name} · đang kiểm tra…`;
   try {
     const text = await file.text();
     if (generation !== otpReadGeneration) return;
     if (!text.trim()) throw new Error('Tệp OTP đang trống.');
+    const response = await send({ type: 'OTP_IMPORT_PREVIEW', text });
+    if (response?.ok === false) throw new Error(response.error || 'Tệp OTP không hợp lệ.');
     otpText = text;
+    otpImportValidCount = response.preview?.valid || 0;
     $('otpTextFileName').textContent = file.name;
-    $('otpPreviewBtn').disabled = false;
+    $('otpImportBtn').disabled = otpImportValidCount === 0;
+    $('otpImportResult').style.color = otpImportValidCount ? 'var(--apple-green)' : '#e11d48';
+    $('otpImportResult').textContent = otpImportValidCount
+      ? `Đã kiểm tra: ${otpImportValidCount} mã OTP hợp lệ, ${response.preview?.duplicates || 0} mục trùng.`
+      : 'Tệp không có mã OTP hợp lệ để nhập.';
   } catch (error) {
     if (generation !== otpReadGeneration) return;
     otpText = '';
-    $('otpTextFileName').textContent = `${file.name} · không đọc được`;
+    $('otpTextFileName').textContent = `${file.name} · không hợp lệ`;
     $('otpImportResult').style.color = '#e11d48';
     $('otpImportResult').textContent = error?.message || 'Không thể đọc tệp OTP.';
     event.target.value = '';
   }
 };
-$('otpPreviewBtn').onclick=async()=>{const r=await send({type:'OTP_IMPORT_PREVIEW',text:otpText});if(!r.ok)return $('otpImportResult').textContent=r.error;otpImportValidCount=r.preview.valid;$('otpImportResult').textContent=`Tổng: ${r.preview.total}\nHợp lệ: ${r.preview.valid}\nTrùng (bỏ qua): ${r.preview.duplicates}\nLỗi: ${r.preview.errors.length}${r.preview.errors.slice(0,5).map(e=>`\n• Dòng ${e.row}: ${e.reason}`).join('')}`;$('otpImportBtn').disabled=!r.preview.valid;};
 $('otpImportBtn').onclick = async () => {
-  if (!confirm(`Nhập tối đa ${otpImportValidCount} mã OTP vào Vault?`)) return;
+  if (!otpText || !otpImportValidCount) return;
+  const accepted = await confirmAction({
+    title: 'Nhập mã OTP?',
+    message: `Bạn có đồng ý nhập ${otpImportValidCount} mã OTP hợp lệ vào Vault không?`,
+    acceptText: 'Đồng ý nhập OTP',
+    cancelText: 'Không nhập',
+    tone: 'restore'
+  });
+  if (!accepted) return;
   const button = $('otpImportBtn');
   const result = $('otpImportResult');
   button.disabled = true;
-  button.textContent = 'Đang nhập...';
+  button.textContent = 'Đang nhập…';
   result.style.color = 'var(--apple-accent)';
-  result.style.fontWeight = '600';
-  result.textContent = '⏳ Đang kiểm tra và mã hóa mã OTP...';
-  const response = await send({ type: 'OTP_IMPORT_COMMIT', text: otpText });
-  button.textContent = 'Nhập OTP';
-  if (response.ok) {
-    const skipped = Math.max(0, otpImportValidCount - response.imported);
+  result.textContent = 'Đang kiểm tra và mã hóa mã OTP…';
+  try {
+    const response = await send({ type: 'OTP_IMPORT_COMMIT', text: otpText });
+    if (response?.ok === false) throw new Error(response.error || 'Không thể nhập OTP.');
+    const skipped = Math.max(0, otpImportValidCount - (response.imported || 0));
     result.style.color = 'var(--apple-green)';
-    result.textContent = `✅ Đã nhập xong ${response.imported} mã OTP.${skipped ? ` Bỏ qua ${skipped} mã đã tồn tại.` : ''}${response.errors.length ? ` Có ${response.errors.length} dòng lỗi.` : ''}`;
+    result.textContent = `Đã nhập ${response.imported ?? 0} mã OTP.${skipped ? ` Bỏ qua ${skipped} mã đã tồn tại.` : ''}`;
     $('otpTextFile').value = '';
     $('otpTextFileName').textContent = 'Chưa chọn tệp';
     otpText = '';
     otpImportValidCount = 0;
-    $('otpPreviewBtn').disabled = true;
-    button.disabled = true;
-    await refreshSyncStatus(response.syncStatus);
-  } else {
+    await refreshSyncStatus(response?.syncStatus);
+  } catch (error) {
     result.style.color = '#e11d48';
-    result.textContent = `❌ Nhập OTP thất bại: ${response.error}`;
-    button.disabled = false;
+    result.textContent = `Không thể nhập OTP: ${error?.message || 'Lỗi không xác định.'}`;
+  } finally {
+    button.textContent = 'Nhập OTP';
+    button.disabled = !otpText;
   }
 };
-$('otpExportBtn').onclick=async()=>{if(!confirm('File xuất chứa secret OTP có thể tạo mã đăng nhập. Tiếp tục?'))return;const r=await send({type:'OTP_EXPORT_TXT',masterPassword:$('otpExportPassword').value});if(!r.ok)return $('otpExportResult').textContent=r.error;downloadText(r.text,`aegis-authenticator-${dateStamp()}.txt`);$('otpExportResult').textContent=`Đã xuất ${r.count} mã OTP.`;};
+$('otpExportBtn').onclick = async () => {
+  const password = $('otpExportPassword').value;
+  const result = $('otpExportResult');
+  const button = $('otpExportBtn');
+  result.style.color = '#e11d48';
+  result.textContent = '';
+  if (!password) {
+    result.textContent = 'Nhập mật khẩu chính để xuất OTP.';
+    $('otpExportPassword').focus();
+    return;
+  }
+  const accepted = await confirmAction({
+    title: 'Xuất mã OTP?',
+    message: 'Tệp TXT chứa secret có thể tạo mã đăng nhập. Hãy giữ tệp ở nơi an toàn.',
+    acceptText: 'Đồng ý xuất OTP',
+    cancelText: 'Không xuất',
+    tone: 'restore'
+  });
+  if (!accepted) return;
+  button.disabled = true;
+  button.textContent = 'Đang xuất…';
+  result.style.color = 'var(--apple-accent)';
+  result.textContent = 'Đang xác minh và chuẩn bị tệp OTP…';
+  try {
+    const response = await send({ type: 'OTP_EXPORT_TXT', masterPassword: password });
+    if (response?.ok === false || typeof response?.text !== 'string') {
+      throw new Error(response?.error || 'Không thể xuất tệp OTP.');
+    }
+    await downloadText(response.text, `aegis-authenticator-${dateStamp()}.txt`, 'text/plain;charset=utf-8');
+    result.style.color = 'var(--apple-green)';
+    result.textContent = `Đã xuất ${response.count ?? 0} mã OTP.`;
+    $('otpExportPassword').value = '';
+  } catch (error) {
+    result.style.color = '#e11d48';
+    result.textContent = `Không thể xuất OTP: ${error?.message || 'Lỗi không xác định.'}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Xuất OTP TXT';
+  }
+};
 
 
 $('changePasswordBtn').onclick = async () => {
@@ -898,7 +1718,9 @@ function initPasswordToggles() {
       if (!input) return;
       const isPwd = input.type === 'password';
       input.type = isPwd ? 'text' : 'password';
-      btn.textContent = isPwd ? '🙈' : '👁️';
+      btn.classList.toggle('is-visible', isPwd);
+      btn.setAttribute('aria-label', isPwd ? 'Ẩn mật khẩu' : 'Hiện mật khẩu');
+      btn.title = isPwd ? 'Ẩn mật khẩu' : 'Hiện mật khẩu';
     };
   });
 }
@@ -918,12 +1740,6 @@ if ($('topDonateBtn')) {
   };
 }
 
-if ($('menuDonate')) {
-  $('menuDonate').onclick = (e) => {
-    e.stopPropagation();
-    openDonateModal();
-  };
-}
 
 if ($('closeDonateModal')) {
   $('closeDonateModal').onclick = closeDonateModal;
@@ -972,5 +1788,3 @@ if ($('copyUsdtBtn')) {
 
 init();
 initPasswordToggles();
-
-

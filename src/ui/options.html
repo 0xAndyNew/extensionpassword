@@ -34,7 +34,10 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #ffffff; }
 .top-bar { display: flex; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--apple-line); background: var(--apple-panel); gap: 20px; }
 .top-search-wrapper { position: relative; width: 340px; margin: 0 auto; }
-.top-search-wrapper input { width: 100%; padding: 8px 12px 8px 36px; border: 1px solid var(--apple-line); border-radius: 8px; background: #f5f5f7; outline: none; font-size: 13px; font-family: var(--font-family); transition: 0.15s; }
+.top-search-wrapper input { width: 100%; padding: 8px 12px 8px 36px; border: 1px solid var(--apple-line); border-radius: 8px; background: #f5f5f7; color:#182230 !important; caret-color:#0071e3; -webkit-text-fill-color:#182230; outline: none; font-size: 13px; font-weight:500; font-family: var(--font-family); transition: 0.15s; }
+.top-search-wrapper input::placeholder { color:#7c8594; -webkit-text-fill-color:#7c8594; opacity:1; }
+.top-search-wrapper input:focus { background:#fff; color:#101828 !important; -webkit-text-fill-color:#101828; border-color:#1687f8; box-shadow:0 0 0 3px rgba(0,113,227,.12); }
+.top-search-wrapper input::selection { color:#fff; background:#0071e3; }
 .top-search-wrapper input:focus { border-color: var(--apple-accent); background: #ffffff; box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15); }
 .top-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--apple-muted); font-size: 14px; }
 .top-right { display: flex; align-items: center; gap: 16px; margin-left: auto; }
@@ -96,7 +99,12 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .sub-tab:hover { color: var(--apple-text); }
 .sub-tab.active { color: var(--apple-accent); border-color: var(--apple-accent); }
 
-.grid-container { flex: 1; overflow-y: auto; padding: 24px 24px 80px 24px; background: var(--apple-bg); scroll-behavior: smooth; }
+.main-content { position: relative; z-index: 1; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #ffffff; }
+.top-bar { position: relative; z-index: 2; }
+.grid-container { position: relative; z-index: 1; flex: 1; min-height: 0; overflow-y: auto; padding: 24px 24px 80px 24px; background: var(--apple-bg); scroll-behavior: smooth; }
+.modal-overlay { pointer-events: none; }
+.modal-overlay.open { pointer-events: auto; }
+.drawer { pointer-events: auto; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
 .grid-card { border: 1px solid var(--apple-line); border-radius: 14px; padding: 20px 14px; text-align: center; background: var(--apple-panel); cursor: pointer; transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s, border-color 0.2s; position: relative; display: flex; flex-direction: column; align-items: center; box-shadow: var(--shadow-soft); }
 .grid-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-active); border-color: rgba(0,0,0,0.15); }
@@ -106,20 +114,36 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .card-user { font-size: 11.5px; color: var(--apple-muted); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
 .card-hover-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.02); border-radius: 14px; opacity: 0; display: grid; place-items: center; transition: opacity 0.15s; color: var(--apple-muted); font-size: 11px; font-weight: 600; backdrop-filter: blur(1px); }
 .grid-card:hover .card-hover-overlay { opacity: 1; }
+.vault-item-card { min-width: 0; min-height: 132px; box-sizing: border-box; padding: 14px; border: 1px solid var(--apple-line); border-radius: 14px; display: flex; flex-direction: column; align-items: stretch; gap: 9px; text-align: left; cursor: pointer; box-shadow: 0 4px 14px rgba(25,39,61,.045); transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+.vault-item-card:hover, .vault-item-card:focus-visible { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(25,39,61,.09); outline: none; border-color: rgba(0,113,227,.3); }
+.note-item-card { background: #fff; }
+.payment-item-card { color: #fff; background: linear-gradient(145deg, #1e293b, #101827); border-color: rgba(255,255,255,.08); }
+.item-action-btn { min-width: 54px; padding: 7px 10px; border: 1px solid var(--apple-line); border-radius: 8px; background: #fff; color: var(--apple-text); font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.item-action-btn:hover { background: #f5f7fa; }
+.item-action-btn.danger { color: #c81e3a; border-color: #fecdd3; background: #fff5f6; }
+.item-action-btn.dark { color: #fff; border-color: transparent; background: rgba(255,255,255,.14); }
+.item-action-btn.danger-dark { color: #ffd3dc; border-color: transparent; background: rgba(225,29,72,.28); }
+.item-action-btn:disabled { opacity: .6; cursor: wait; }
+#notesGrid, #cardsGrid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
 
-.drawer { position: fixed; top: 0; right: -380px; width: 380px; height: 100%; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(25px) saturate(190%); border-left: 1px solid var(--apple-line); box-shadow: -8px 0 30px rgba(0,0,0,0.05); transition: right 0.28s cubic-bezier(0.16, 1, 0.3, 1); z-index: 100; display: flex; flex-direction: column; }
+.drawer { position: fixed; top: 0; right: -520px; width: min(520px, 92vw); height: 100%; box-sizing: border-box; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(25px) saturate(190%); border-left: 1px solid var(--apple-line); box-shadow: -12px 0 36px rgba(0,0,0,0.10); transition: right 0.28s cubic-bezier(0.16, 1, 0.3, 1); z-index: 100; display: flex; flex-direction: column; }
 .drawer.open { right: 0; }
-.drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--apple-line); }
-.drawer-header-left { display: flex; align-items: center; gap: 10px; }
-.drawer-header-left h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--apple-text); }
-.drawer-header-left .logo-badge { width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--apple-green); display: grid; place-items: center; font-size: 14px; overflow: hidden; }
-.drawer-header-left .logo-badge img, .drawer-header-left .logo-badge .aegis-site-fallback { width: 100%; height: 100%; object-fit: cover; display: block; }
-.drawer-actions { display: flex; gap: 8px; }
-.drawer-actions button { padding: 6px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; border: 1px solid var(--apple-line); background: #ffffff; color: var(--apple-text); transition: 0.1s; }
+.drawer-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 28px; border-bottom: 1px solid var(--apple-line); background: rgba(255,255,255,.72); }
+.drawer-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.drawer-header-left h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--apple-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawer-header-left .logo-badge { width: 32px; height: 32px; border-radius: 9px; background: var(--apple-accent-light); color: var(--apple-accent); display: grid; place-items: center; font-size: 15px; overflow: hidden; flex: 0 0 32px; }
+.drawer-actions { display: flex; gap: 9px; flex: 0 0 auto; }
+.drawer-actions button { min-width: 68px; padding: 8px 16px; border-radius: 9px; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--apple-line); background: #ffffff; color: var(--apple-text); transition: 0.1s; }
 .drawer-actions button:hover { background: #f5f5f7; }
 .drawer-actions button.save { background: var(--apple-accent); color: white; border-color: var(--apple-accent); }
 .drawer-actions button.save:hover { background: #0077ed; }
-.drawer-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.card-expiry-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%; }
+.card-expiry-grid .form-group { min-width: 0; }
+.card-expiry-grid input { width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 430px) { .card-expiry-grid { gap: 8px; } .card-expiry-grid label { font-size: 10.5px; } }
+.drawer-body { flex: 1; overflow-y: auto; padding: 26px 28px 36px; display: flex; flex-direction: column; gap: 16px; }
+.drawer-body input, .drawer-body textarea, .drawer-body select { box-sizing: border-box; max-width: 100%; }
+@media (max-width: 600px) { .drawer { width: 100vw; } .drawer-header { padding: 16px 20px; } .drawer-body { padding: 22px 20px 32px; } }
 .form-section-title { font-size: 11px; font-weight: 700; color: var(--apple-accent); text-transform: uppercase; margin: 8px 0 4px; letter-spacing: 0.05em; }
 .form-group { display: flex; flex-direction: column; gap: 4px; }
 .form-group label { font-size: 12px; font-weight: 600; color: var(--apple-muted); }
@@ -163,8 +187,15 @@ body { display: flex; height: 100vh; overflow: hidden; background: var(--apple-b
 .config-card label { display: block; font-size: 11.5px; font-weight: 650; color: var(--apple-text); margin-bottom: 7px; }
 .password-field { position: relative; }
 .password-field .field-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--apple-muted); font-size: 13px; pointer-events: none; }
-.config-card input[type="password"] { box-sizing:border-box; display:block; height:40px; padding:8px 12px; border-radius:10px; border:1px solid var(--apple-line); background:#fff; color:inherit; width:100%; max-width:360px; outline:none; font:inherit; transition:border-color .15s,box-shadow .15s; }
-.password-field input[type="password"] { padding-left:36px; }
+.password-field { position:relative; }
+.password-field input[type="password"],.password-field input[type="text"] { padding-left:36px; padding-right:44px; }
+.field-stack { position:relative; }
+.field-stack > .toggle-pwd-btn { top:30px; }
+.toggle-pwd-btn { position:absolute; right:7px; top:50%; transform:translateY(-50%); width:32px; height:30px; padding:0; border:1px solid #d5dbe5 !important; border-radius:8px; color:#344054; background:#f8fafc !important; cursor:pointer; font-size:0 !important; display:grid; place-items:center; z-index:3; opacity:1 !important; }
+.toggle-pwd-btn::before { content:''; width:16px; height:10px; box-sizing:border-box; border:2px solid currentColor; border-radius:70% 20% 70% 20%; transform:rotate(45deg); }
+.toggle-pwd-btn::after { content:''; position:absolute; width:5px; height:5px; border-radius:50%; background:currentColor; }
+.toggle-pwd-btn:hover { color:#0071e3; border-color:#99caff !important; background:#eef7ff !important; }
+.config-card input[type="password"],.config-card input[type="text"] { box-sizing:border-box; display:block; height:40px; padding:8px 44px 8px 12px; border-radius:10px; border:1px solid var(--apple-line); background:#fff; color:inherit; width:100%; max-width:360px; outline:none; font:inherit; transition:border-color .15s,box-shadow .15s; }
 .config-card input[type="password"]:focus { border-color: var(--apple-accent); box-shadow: 0 0 0 3px rgba(0,113,227,.1); }
 .compact-export-actions { justify-content:flex-start; align-items:flex-end; flex-wrap:wrap; }
 .compact-export-actions > button { flex:0 0 auto; white-space:nowrap; margin-bottom:1px; }
@@ -469,16 +500,130 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 .top-lang-btn:hover {
   background: #f5f5f7;
 }
+.confirm-modal { position:fixed; inset:0; z-index:220; display:grid; place-items:center; padding:20px; background:rgba(15,23,42,.28); backdrop-filter:blur(4px); }
+.confirm-modal.hidden { display:none; }
+.confirm-card { width:min(340px, calc(100vw - 40px)); box-sizing:border-box; padding:24px; border:1px solid rgba(0,0,0,.08); border-radius:18px; background:#fff; text-align:center; box-shadow:0 24px 70px rgba(15,23,42,.2); animation:confirmIn .18s ease-out; }
+.confirm-icon { width:44px; height:44px; margin:0 auto 12px; border-radius:13px; display:grid; place-items:center; background:#fff0f2; font-size:20px; }
+.confirm-card h3 { margin:0 0 7px; font-size:17px; color:var(--apple-text); }
+.confirm-card p { margin:0; color:var(--apple-muted); font-size:12.5px; line-height:1.5; }
+.confirm-actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:20px; }
+.confirm-actions button { padding:10px 12px; border:1px solid var(--apple-line); border-radius:9px; background:#fff; cursor:pointer; font-weight:700; }
+#deleteConfirmAccept { border-color:#e11d48; background:#e11d48; color:#fff; }
+@keyframes confirmIn { from { opacity:0; transform:translateY(8px) scale(.97); } to { opacity:1; transform:none; } }
+.card-detail-modal { position:fixed; inset:0; z-index:210; display:grid; place-items:center; padding:24px; background:rgba(15,23,42,.36); backdrop-filter:blur(6px); }
+.card-detail-modal.hidden { display:none; }
+.card-detail-shell { position:relative; width:min(520px, calc(100vw - 40px)); box-sizing:border-box; padding:28px; border-radius:22px; background:#fff; box-shadow:0 30px 90px rgba(15,23,42,.3); }
+.card-detail-close { position:absolute; top:10px; right:10px; width:36px; height:36px; padding:0; border:1px solid #cfd6e2; border-radius:50%; color:#182230; background:#fff; cursor:pointer; z-index:5; font-size:0; display:grid; place-items:center; box-shadow:0 5px 16px rgba(15,23,42,.18); }
+.card-detail-close::before,.card-detail-close::after { content:''; position:absolute; width:15px; height:2px; border-radius:2px; background:#182230; }
+.card-detail-close::before { transform:rotate(45deg); }
+.card-detail-close::after { transform:rotate(-45deg); }
+.card-detail-close:hover { color:#b42318; border-color:#fda4af; background:#fff5f6; transform:scale(1.06); }
+.card-detail-close:hover::before,.card-detail-close:hover::after { background:#b42318; }
+.card-detail-close:focus-visible { outline:3px solid rgba(0,113,227,.28); outline-offset:2px; }
+.real-card { position:relative; width:100%; aspect-ratio:1.586/1; box-sizing:border-box; padding:28px 30px; border-radius:22px; overflow:hidden; color:#fff; background:linear-gradient(135deg,#3475be 0%,#194784 45%,#142f63 100%); box-shadow:0 18px 40px rgba(20,55,105,.3); }
+.real-card::after { content:''; position:absolute; inset:-35% -10%; background:radial-gradient(circle at 70% 45%,rgba(255,255,255,.13),transparent 35%); pointer-events:none; }
+.real-card-top,.real-card-bottom,.real-card-chip-row { position:relative; z-index:1; display:flex; align-items:center; justify-content:space-between; }
+.real-card-top strong { max-width:72%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:18px; line-height:1.2; letter-spacing:.075em; text-transform:uppercase; }
+.real-card-top span { font-size:15px; font-weight:800; font-style:italic; }
+.real-card-chip-row { justify-content:flex-start; gap:15px; margin-top:25px; }
+.real-card-chip { width:48px; height:36px; border-radius:8px; background:linear-gradient(135deg,#ffd44f,#c89914); box-shadow:inset 0 0 0 1px rgba(100,70,0,.35); }
+.contactless { transform:rotate(180deg); font-weight:800; font-size:20px; }
+.real-card-number { position:relative; z-index:1; margin-top:20px; font-family:monospace; font-size:clamp(20px,3vw,28px); font-weight:700; letter-spacing:.11em; white-space:nowrap; }
+.real-card-bottom { align-items:flex-end; margin-top:22px; }
+.real-card-bottom div { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.real-card-bottom small { font-size:8px; letter-spacing:.12em; opacity:.7; }
+.real-card-bottom strong { font-size:15px; line-height:1.2; letter-spacing:.085em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card-detail-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
+.card-detail-actions button { padding:9px 14px; border:1px solid #d8dde6; border-radius:9px; background:#fff; color:#182230; cursor:pointer; font-weight:700; }
+.card-detail-actions button:hover { background:#f4f7fb; }
+.payment-item-card { width:340px; max-width:100%; aspect-ratio:1.586/1; min-height:0; padding:18px; justify-content:space-between; }
+#cardsGrid { grid-template-columns:repeat(auto-fill,minmax(340px,340px)); }
+.note-item-card { width:340px; max-width:100%; aspect-ratio:1.586/1; min-height:0; padding:18px; justify-content:space-between; }
+#notesGrid { grid-template-columns:repeat(auto-fill,minmax(340px,340px)); }
+.note-item-card strong { font-size:17px !important; line-height:1.25; text-transform:uppercase; }
+.note-item-card p { font-size:13px !important; line-height:1.55 !important; -webkit-line-clamp:4 !important; }
+.note-private-preview,.trash-private-note { margin:0 !important; padding:12px 13px; border:1px dashed #d7c98e; border-radius:10px; color:#987100 !important; background:#fffbed; font-family:monospace; font-size:17px !important; font-weight:800; letter-spacing:.16em; line-height:1 !important; white-space:nowrap !important; overflow:hidden; }
+.note-private-preview::before { content:'NỘI DUNG ĐANG ẨN'; display:block; margin-bottom:8px; color:#8a7760; font-family:inherit; font-size:8px; letter-spacing:.12em; }
+.note-item-card .item-action-btn, .note-item-card button { min-width:64px; width:auto; padding:8px 11px; color:#182230; font-size:12px !important; line-height:1.2; font-family:inherit; font-weight:700; white-space:nowrap; text-indent:0; }
+.note-item-card .item-action-btn.danger { color:#c81e3a; }
+.note-item-card > div:last-child { display:flex; gap:8px; }
+.note-item-card > div:last-child > button:first-child { flex:1; min-width:112px; }
+#deleteConfirmCancel { color:#182230 !important; font-size:13px !important; background:#fff !important; border-color:#d8dde6 !important; }
+#deleteConfirmAccept { color:#fff !important; font-size:13px !important; }
+.secure-field { position:relative; }
+.secure-field input { width:100%; padding-right:42px; box-sizing:border-box; }
+.secure-field button, .card-cvv-detail button { font-size:0; display:grid; place-items:center; }
+.secure-field button::before, .card-cvv-detail button:not(.card-inline-copy)::before { content:''; width:17px; height:11px; box-sizing:border-box; border:2px solid currentColor; border-radius:70% 20% 70% 20%; transform:rotate(45deg); }
+.secure-field button::after, .card-cvv-detail button:not(.card-inline-copy)::after { content:''; position:absolute; width:5px; height:5px; border-radius:50%; background:currentColor; }
+.secure-field button { position:absolute; top:50%; right:6px; transform:translateY(-50%); width:34px; height:32px; border:1px solid #d5dbe5; border-radius:8px; color:#344054; background:#f8fafc; cursor:pointer; }
+.card-cvv-detail { display:flex; align-items:center; gap:5px; }
+.card-value-row,.card-copy-row { display:flex; align-items:center; gap:7px; }
+.card-number-zone { position:relative; margin-top:8px; padding-top:27px; }
+.card-number-zone .real-card-number { margin-top:0; }
+.card-number-copy { position:absolute !important; top:0; right:0; }
+.card-copy-row { justify-content:space-between; }
+.card-copy-row > span { min-width:0; }
+.card-cvv-detail button:not(.card-inline-copy) { position:relative; width:28px; height:25px; padding:0; border:1px solid rgba(255,255,255,.38); border-radius:6px; color:#fff; background:rgba(255,255,255,.2); cursor:pointer; font-size:0; display:grid; place-items:center; }
+.card-cvv-detail button:not(.card-inline-copy)::before { content:''; width:16px; height:10px; box-sizing:border-box; border:2px solid currentColor; border-radius:70% 20% 70% 20%; transform:rotate(45deg); }
+.card-cvv-detail button:not(.card-inline-copy)::after { content:''; position:absolute; width:5px; height:5px; border-radius:50%; background:currentColor; }
+.card-inline-copy { position:relative; flex:0 0 25px; width:25px; height:25px; padding:0; border:1px solid rgba(255,255,255,.36); border-radius:6px; color:#fff; background:rgba(255,255,255,.16); cursor:pointer; }
+.card-inline-copy::before,.card-inline-copy::after { content:''; position:absolute; width:9px; height:12px; box-sizing:border-box; border:1.7px solid currentColor; border-radius:2px; background:transparent; }
+.card-inline-copy::before { left:7px; top:5px; }
+.card-inline-copy::after { left:10px; top:8px; background:rgba(33,75,132,.9); }
+.card-inline-copy:hover,.card-cvv-detail button:not(.card-inline-copy):hover { background:rgba(255,255,255,.3); }
+.card-inline-copy.copied { color:#7ef0b5; border-color:#7ef0b5; }
+.note-detail-modal { position:fixed; inset:0; z-index:210; display:grid; place-items:center; padding:24px; background:rgba(15,23,42,.36); backdrop-filter:blur(6px); }
+.note-detail-modal.hidden { display:none; }
+.note-detail-shell { position:relative; width:min(540px,calc(100vw - 40px)); max-height:min(640px,calc(100vh - 48px)); box-sizing:border-box; padding:26px; border:1px solid rgba(0,0,0,.08); border-radius:22px; display:flex; flex-direction:column; background:linear-gradient(145deg,#fffdf5,#fff); box-shadow:0 30px 90px rgba(15,23,42,.25); }
+.note-detail-close { position:absolute; top:14px; right:14px; width:32px; height:32px; border:0; border-radius:50%; background:#f2f4f7; color:#344054; cursor:pointer; }
+.note-detail-heading { display:flex; align-items:center; gap:13px; padding-right:38px; }
+.note-detail-icon { width:44px; height:44px; flex:0 0 44px; border-radius:13px; display:grid; place-items:center; background:#fff1b8; font-size:20px; }
+.note-detail-heading small { color:#987100; font-size:9px; font-weight:800; letter-spacing:.14em; }
+.note-detail-heading h3 { margin:3px 0 0; color:#182230; font-size:20px; line-height:1.25; letter-spacing:.035em; text-transform:uppercase; }
+.note-detail-content { min-height:110px; margin-top:20px; padding:17px; border:1px solid #ece5cc; border-radius:13px; overflow:auto; color:#344054; background:rgba(255,255,255,.74); font-size:13.5px; line-height:1.65; white-space:pre-wrap; overflow-wrap:anywhere; }
+.note-detail-actions { display:flex; justify-content:flex-end; margin-top:16px; }
+.note-detail-actions button { padding:9px 14px; border:1px solid #d8dde6; border-radius:9px; background:#fff; color:#182230 !important; cursor:pointer; font-size:13px !important; font-weight:700; }
+#trashGrid { grid-template-columns:repeat(auto-fill,minmax(300px,340px)); gap:16px; }
+.trash-empty { grid-column:1/-1; padding:40px; color:var(--apple-muted); text-align:center; font-size:13px; }
+.trash-item { min-height:190px; box-sizing:border-box; padding:15px; border:1px solid var(--apple-line); border-radius:16px; display:flex; flex-direction:column; gap:10px; background:#fff; box-shadow:0 5px 18px rgba(26,39,61,.05); }
+.trash-date { align-self:flex-end; font-size:9.5px; color:var(--apple-muted); }
+.trash-content { flex:1; min-width:0; }
+.trash-card { color:#fff; border-color:rgba(255,255,255,.08); background:linear-gradient(145deg,#243552,#111c30); aspect-ratio:1.586/1; }
+.trash-card .trash-date { color:#a9b6ca; }
+.trash-card-top,.trash-card-meta,.trash-note-title,.trash-login-title { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.trash-card-top strong,.trash-note-title strong,.trash-login-title strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-transform:uppercase; }
+.trash-card-number { margin:28px 0 20px; color:#56c7ff; font-family:monospace; font-size:17px; font-weight:800; letter-spacing:.09em; }
+.trash-card-meta { color:#ccd5e3; font-size:11px; text-transform:uppercase; }
+.trash-note { background:linear-gradient(145deg,#fffdf5,#fff); }
+.trash-note-title,.trash-login-title { justify-content:flex-start; font-size:15px; }
+.trash-note .trash-content p,.trash-item:not(.trash-card) .trash-content p { margin:13px 0 0; color:var(--apple-muted); font-size:12.5px; line-height:1.55; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; white-space:pre-wrap; }
+.trash-actions { display:flex; gap:8px; margin-top:auto; }
+.trash-actions button { flex:1; padding:8px 10px; border-radius:8px; cursor:pointer; font-size:11px; font-weight:750; white-space:nowrap; }
+.trash-restore { border:1px solid #8bc5ff; color:#0067c9; background:#eef7ff; }
+.trash-delete { border:1px solid #fecdd3; color:#c81e3a; background:#fff5f6; }
+.trash-card .trash-restore { border-color:rgba(103,196,255,.4); color:#a5e1ff; background:rgba(37,152,222,.18); }
+.trash-card .trash-delete { border-color:rgba(255,133,158,.35); color:#ffd1db; background:rgba(225,29,72,.22); }
+.confirm-modal[data-tone="restore"] .confirm-icon { color:#0067c9; background:#e7f4ff; font-size:27px; font-weight:800; }
+.confirm-modal[data-tone="restore"] #deleteConfirmAccept { border-color:#0071e3; background:#0071e3; }
+.settings-tool-picker { padding:18px; border:1px solid var(--apple-line); border-radius:16px; background:linear-gradient(135deg,#f9fbff,#fff); }
+.settings-tool-picker label { display:block; margin-bottom:7px; color:var(--apple-text); font-size:12px; font-weight:750; }
+.settings-tool-picker select { width:min(430px,100%); padding:10px 38px 10px 12px; border:1px solid #d8dde6; border-radius:10px; background:#fff; color:#182230; font-weight:650; }
+.settings-tool-panel.hidden { display:none !important; }
+.settings-tool-panel { animation:settingsPanelIn .18s ease-out; }
+@keyframes settingsPanelIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+@media (max-width:600px) { .card-detail-shell { padding:16px; } .real-card { padding:21px; border-radius:17px; } .real-card-number { letter-spacing:.04em; } #cardsGrid, #notesGrid, #trashGrid { grid-template-columns:1fr; } .payment-item-card, .note-item-card { width:100%; } .note-detail-shell { padding:20px; } .trash-actions { flex-direction:column; } }
 </style></head><body>
 <div class="modal-overlay" id="overlay"></div>
 <aside class="sidebar">
   <div class="brand"><img src="logo.svg" alt="logo" class="logo-img"><h1>Aegis Vault</h1></div>
   <ul class="nav-menu">
     <li class="nav-item active" id="menuLogins" data-i18n="tabLogins">🔑 Logins</li>
+    <li class="nav-item" id="menuNotes" data-i18n="tabNotes">📝 Ghi chú</li>
+    <li class="nav-item" id="menuCards" data-i18n="tabCards">💳 Thẻ ATM</li>
+    <li class="nav-item" id="menuIdentity" data-i18n="tabIdentity">👤 Định danh</li>
     <li class="nav-item" id="menuSecurity" data-i18n="tabSecurity">🛡️ Security Center</li>
-    <li class="nav-item" id="menuIdentity" data-i18n="tabIdentity">👤 Identity</li>
+    <li class="nav-item" id="menuTrash" data-i18n="tabTrash">🗑️ Thùng rác</li>
     <li class="nav-item" id="menuSettings" data-i18n="tabSettings">⚙️ Settings</li>
-    <li class="nav-item" id="menuDonate" data-i18n="tabDonate">☕ Ủng hộ tác giả</li>
   </ul>
   <div class="sidebar-bottom">
     <div class="promo-box">
@@ -502,7 +647,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
           <button id="optLangEnBtn" class="dropdown-item">🇬🇧 English</button>
         </div>
       </div>
-      <button class="top-donate-btn" id="topDonateBtn" title="Ủng hộ tác giả Aegis Vault" data-i18n="topDonateBtn">☕ Ủng hộ tác giả</button>
+      <button class="top-donate-btn" id="topDonateBtn" title="Mời tôi một ly cà phê" data-i18n="topDonateBtn">☕ Mời tôi một ly cà phê</button>
       <span class="top-help" title="Trợ giúp" data-i18n-title="topHelp">❓</span>
       <div class="top-user hidden" id="topUserBtn">
         <div class="top-avatar" id="googleAvatar">?</div>
@@ -525,6 +670,30 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   
   <section class="grid-container" id="loginsSection">
     <div class="grid" id="loginsGrid"></div>
+  </section>
+
+  <section class="grid-container hidden" id="notesSection">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 style="margin:0; font-size:16px; font-weight:700;">📝 Ghi chú bảo mật (Secure Notes)</h3>
+      <button id="addNoteBtn" style="padding:7px 14px; background:var(--apple-accent); color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer;" data-i18n="addNoteBtn">+ Thêm ghi chú mới</button>
+    </div>
+    <div class="grid" id="notesGrid"></div>
+  </section>
+
+  <section class="grid-container hidden" id="cardsSection">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 style="margin:0; font-size:16px; font-weight:700;">💳 Thẻ thanh toán (Credit / Debit Cards)</h3>
+      <button id="addCardBtn" style="padding:7px 14px; background:var(--apple-accent); color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer;" data-i18n="addCardBtn">+ Thêm thẻ mới</button>
+    </div>
+    <div class="grid" id="cardsGrid"></div>
+  </section>
+
+  <section class="grid-container hidden" id="trashSection">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 style="margin:0; font-size:16px; font-weight:700;">🗑️ Thùng rác (Recycle Bin)</h3>
+      <button id="emptyTrashBtn" style="padding:7px 14px; background:#e11d48; color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer;" data-i18n="emptyTrashBtn">Làm sạch thùng rác</button>
+    </div>
+    <div class="grid" id="trashGrid"></div>
   </section>
 
   <section class="grid-container hidden" id="securitySection">
@@ -578,7 +747,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
           <p id="identityEmail" style="margin:0;font-size:12.5px;color:var(--apple-muted)">Hãy click biểu tượng Aegis Vault ở thanh công cụ trình duyệt để liên kết.</p>
         </div>
       </div>
-    </div>
 
     <div class="config-card">
       <h3>Đổi mật khẩu chính</h3>
@@ -587,21 +755,21 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         <div>
           <label for="changeCurrentPassword">Mật khẩu chính hiện tại</label>
           <div style="position:relative; display:flex; align-items:center; width:100%;">
-            <input id="changeCurrentPassword" type="password" style="width: 100%; padding-right: 36px;">
+            <input id="changeCurrentPassword" type="password" style="width: 100%; padding-right: 36px;"><button type="button" class="toggle-pwd-btn" data-target="changeCurrentPassword" aria-label="Hiện mật khẩu" title="Hiện/Ẩn mật khẩu"></button>
             <button type="button" class="toggle-pwd-btn" data-target="changeCurrentPassword" title="Hiện/Ẩn mật khẩu" style="position:absolute; right:8px; background:none; border:none; cursor:pointer; font-size:14px; padding:4px; opacity:0.65;">👁️</button>
           </div>
         </div>
         <div>
           <label for="changeNewPassword">Mật khẩu chính mới (tối thiểu 6 ký tự)</label>
           <div style="position:relative; display:flex; align-items:center; width:100%;">
-            <input id="changeNewPassword" type="password" style="width: 100%; padding-right: 36px;">
+            <input id="changeNewPassword" type="password" style="width: 100%; padding-right: 36px;"><button type="button" class="toggle-pwd-btn" data-target="changeNewPassword" aria-label="Hiện mật khẩu" title="Hiện/Ẩn mật khẩu"></button>
             <button type="button" class="toggle-pwd-btn" data-target="changeNewPassword" title="Hiện/Ẩn mật khẩu" style="position:absolute; right:8px; background:none; border:none; cursor:pointer; font-size:14px; padding:4px; opacity:0.65;">👁️</button>
           </div>
         </div>
         <div>
           <label for="changeConfirmPassword">Xác nhận mật khẩu chính mới</label>
           <div style="position:relative; display:flex; align-items:center; width:100%;">
-            <input id="changeConfirmPassword" type="password" style="width: 100%; padding-right: 36px;">
+            <input id="changeConfirmPassword" type="password" style="width: 100%; padding-right: 36px;"><button type="button" class="toggle-pwd-btn" data-target="changeConfirmPassword" aria-label="Hiện mật khẩu" title="Hiện/Ẩn mật khẩu"></button>
             <button type="button" class="toggle-pwd-btn" data-target="changeConfirmPassword" title="Hiện/Ẩn mật khẩu" style="position:absolute; right:8px; background:none; border:none; cursor:pointer; font-size:14px; padding:4px; opacity:0.65;">👁️</button>
           </div>
         </div>
@@ -612,7 +780,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   </section>
   
   <section class="grid-container hidden" id="settingsSection">
-    <div class="config-card">
+    <div class="settings-tool-picker">
+      <label for="settingsToolSelect">Công cụ nhập / xuất dữ liệu</label>
+      <select id="settingsToolSelect">
+        <option value="backup">Backup và khôi phục Vault</option>
+        <option value="lastpass">Nhập / xuất CSV</option>
+        <option value="otp">Nhập / xuất OTP TXT</option>
+      </select>
+    </div>
+    <div class="config-card settings-tool-panel" data-settings-tool="backup">
       <div class="config-card-header">
         <div class="config-card-icon" aria-hidden="true">◇</div>
         <div>
@@ -667,12 +843,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         <p id="recoveryExportResult" class="result-message" role="status" aria-live="polite"></p>
       </div>
     </div>
-    <div class="config-card">
+    <div class="config-card settings-tool-panel hidden" data-settings-tool="lastpass">
       <div class="config-card-header">
         <div class="config-card-icon" aria-hidden="true">⇧</div>
         <div>
-          <h3>Nhập dữ liệu từ LastPass</h3>
-          <p>Chọn tệp CSV đã xuất từ LastPass. Bạn có thể xem trước và kiểm tra dữ liệu trước khi đưa vào Vault.</p>
+          <h3>Nhập / xuất CSV</h3>
+          <p>Nhập tệp CSV vào Vault hoặc xuất dữ liệu tài khoản thành tệp CSV.</p>
         </div>
       </div>
       <div class="file-picker">
@@ -684,20 +860,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         </div>
       </div>
       <div class="config-actions">
-        <button id="previewButton" disabled>Xem trước dữ liệu</button>
-        <button id="importButton" class="active" disabled>Nhập vào Vault</button>
+        <button id="importButton" class="active" disabled>Nhập CSV</button>
       </div>
       <p id="importResult" class="result-message" style="white-space:pre-wrap;margin-top:16px;color:var(--apple-muted);font-size:12.5px"></p>
       <p class="security-warning"><span aria-hidden="true">⚠</span><span>Tệp CSV chứa mật khẩu dạng rõ và giữ nguyên dữ liệu để nhập sang password manager. Không mở tệp bằng Excel hoặc Google Sheets vì nội dung website có thể bị diễn giải như công thức.</span></p>
-      <div class="config-actions compact-export-actions"><div class="field-stack"><label for="exportPassword">Mật khẩu chính để xuất CSV</label><div class="password-field"><span class="field-icon">●</span><input id="exportPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu chính"></div></div><button id="exportButton" class="active">Xuất LastPass CSV</button></div>
+      <div class="config-actions compact-export-actions"><div class="field-stack"><label for="exportPassword">Mật khẩu chính để xuất CSV</label><div class="password-field"><span class="field-icon">●</span><input id="exportPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu chính"><button type="button" class="toggle-pwd-btn" data-target="exportPassword" aria-label="Hiện mật khẩu" title="Hiện/Ẩn mật khẩu"></button></div></div><button id="exportButton" class="active">Xuất CSV</button></div>
       <p id="exportResult" class="result-message" style="margin-top:14px;font-size:12.5px"></p>
     </div>
-    <div class="config-card">
+    <div class="config-card settings-tool-panel hidden" data-settings-tool="otp">
       <div class="config-card-header"><div class="config-card-icon">⌁</div><div><h3>Nhập & xuất mã OTP</h3><p>Tương thích Authenticator TXT: mỗi dòng là một URI otpauth://totp.</p></div></div>
       <div class="file-picker"><input id="otpTextFile" type="file" accept=".txt,text/plain"><label class="file-select-button" for="otpTextFile">Chọn Authenticator TXT</label><div class="file-meta"><span class="file-name" id="otpTextFileName">Chưa chọn tệp</span><span class="file-hint">Secret chỉ được xử lý cục bộ trong Vault</span></div></div>
-      <div class="config-actions"><button id="otpPreviewBtn" disabled>Xem trước</button><button id="otpImportBtn" class="active" disabled>Nhập OTP</button></div><p id="otpImportResult" class="result-message" style="white-space:pre-wrap"></p>
+      <div class="config-actions"><button id="otpImportBtn" class="active" disabled>Nhập OTP</button></div><p id="otpImportResult" class="result-message" style="white-space:pre-wrap"></p>
       <p class="security-warning"><span>⚠</span><span>Tệp OTP chứa secret có thể tạo mã đăng nhập. Hãy giữ tệp ở nơi an toàn.</span></p>
-      <div class="config-actions compact-export-actions"><div class="field-stack"><label for="otpExportPassword">Mật khẩu chính</label><input id="otpExportPassword" type="password" autocomplete="current-password"></div><button id="otpExportBtn" class="active">Xuất OTP TXT</button></div><p id="otpExportResult" class="result-message"></p>
+      <div class="config-actions compact-export-actions"><div class="field-stack"><label for="otpExportPassword">Mật khẩu chính</label><input id="otpExportPassword" type="password" autocomplete="current-password"><button type="button" class="toggle-pwd-btn" data-target="otpExportPassword" aria-label="Hiện mật khẩu" title="Hiện/Ẩn mật khẩu"></button></div><button id="otpExportBtn" class="active">Xuất OTP TXT</button></div><p id="otpExportResult" class="result-message"></p>
     </div>
   </section>
 </main>
@@ -743,23 +918,145 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     <div class="form-group">
       <label for="editPassword">Password</label>
       <div class="input-with-btn">
-        <input type="password" id="editPassword">
+        <input type="password" id="editPassword"><button type="button" class="toggle-pwd-btn" data-target="editPassword" aria-label="Hiện mật khẩu" title="Hiện/Ẩn mật khẩu"></button>
         <button id="togglePassword" type="button">Show</button>
       </div>
     </div>
+
+    <div id="pwdHistoryWrapper" class="hidden" style="margin:8px 0 16px; padding:10px 12px; background:var(--apple-bg); border-radius:10px; border:1px solid var(--apple-line);">
+      <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:var(--apple-text);" data-i18n="pwdHistoryTitle">📜 Lịch sử mật khẩu cũ</div>
+      <div id="pwdHistoryList" style="display:flex; flex-direction:column; gap:6px; max-height:140px; overflow-y:auto;"></div>
+    </div>
     
-    <label class="favorite-control" for="editFavorite">
-      <span class="favorite-copy"><strong>Đánh dấu yêu thích</strong><span>Ưu tiên tài khoản này trong danh sách phổ biến.</span></span>
-      <input class="favorite-toggle" id="editFavorite" type="checkbox" role="switch">
-    </label>
     
     <div class="form-section-title">Ghi chú bổ sung</div>
     <div class="form-group">
       <label for="editNotes">Ghi chú</label>
       <textarea id="editNotes" rows="3" placeholder="Ghi chú bảo mật..."></textarea>
     </div>
-    
-    <button class="delete-btn" id="deleteBtn" type="button">Xóa tài khoản này</button>
+    <p id="loginSaveResult" role="status" aria-live="polite" style="min-height:18px; margin:0; font-size:12px; font-weight:650;"></p>
+    <button id="deleteBtn" type="button" style="margin-top:8px; padding:10px 12px; border:1px solid #fecaca; border-radius:8px; background:#fff5f5; color:#b42318; cursor:pointer; font-weight:700;">🗑️ Xóa thông tin</button>
+  </div>
+</div>
+
+<!-- Note Drawer -->
+<div class="drawer" id="noteDrawer">
+  <div class="drawer-header">
+    <div class="drawer-header-left">
+      <div class="logo-badge">📝</div>
+      <h3 id="noteDrawerTitle">Thêm ghi chú bảo mật</h3>
+    </div>
+    <div class="drawer-actions">
+      <button id="noteDrawerCancel">Hủy</button>
+      <button id="noteDrawerSave" class="save">Lưu</button>
+    </div>
+  </div>
+  <div class="drawer-body">
+    <input type="hidden" id="editNoteId">
+    <div class="form-group">
+      <label for="editNoteTitle">Tiêu đề ghi chú</label>
+      <input type="text" id="editNoteTitle" placeholder="VD: Mã Recovery Google, Khóa API OpenAI...">
+    </div>
+    <div class="form-group">
+      <label for="editNoteContent">Nội dung bảo mật</label>
+      <textarea id="editNoteContent" rows="6" placeholder="Nhập nội dung bí mật cần lưu trữ..."></textarea>
+    </div>
+    <p id="noteSaveResult" role="status" aria-live="polite" style="min-height:18px; margin:0; font-size:12px; font-weight:650;"></p>
+  </div>
+</div>
+
+<!-- Card Drawer -->
+<div class="drawer" id="cardDrawer">
+  <div class="drawer-header">
+    <div class="drawer-header-left">
+      <div class="logo-badge">💳</div>
+      <h3 id="cardDrawerTitle">Thêm thẻ thanh toán</h3>
+    </div>
+    <div class="drawer-actions">
+      <button id="cardDrawerCancel">Hủy</button>
+      <button id="cardDrawerSave" class="save">Lưu</button>
+    </div>
+  </div>
+  <div class="drawer-body">
+    <input type="hidden" id="editCardId">
+    <div class="form-group">
+      <label for="editCardTitle">Tên ngân hàng</label>
+      <input type="text" id="editCardTitle" placeholder="VD: Vietcombank, Techcombank, BIDV..." autocomplete="organization">
+    </div>
+    <div class="form-group">
+      <label for="editCardName">Tên chủ thẻ (In trên thẻ)</label>
+      <input type="text" id="editCardName" placeholder="NGUYEN VAN A">
+    </div>
+    <div class="form-group">
+      <label for="editCardNumber">Số thẻ (16 chữ số)</label>
+      <input type="text" id="editCardNumber" placeholder="4111 2222 3333 4444">
+    </div>
+    <div class="card-expiry-grid">
+      <div class="form-group">
+        <label for="editCardExpMonth">Tháng hết hạn (MM)</label>
+        <input type="text" id="editCardExpMonth" inputmode="numeric" maxlength="2" placeholder="12">
+      </div>
+      <div class="form-group">
+        <label for="editCardExpYear">Năm hết hạn (YY/YYYY)</label>
+        <input type="text" id="editCardExpYear" inputmode="numeric" maxlength="4" placeholder="2028">
+      </div>
+      <div class="form-group">
+        <label for="editCardCvv">Mã CVV</label>
+        <div class="secure-field">
+          <input type="password" id="editCardCvv" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="123">
+          <button id="toggleCardCvv" type="button" aria-label="Hiện mã CVV" aria-pressed="false">👁</button>
+        </div>
+      </div>
+    </div>
+    <p id="cardSaveResult" role="status" aria-live="polite" style="min-height:18px; margin:0; font-size:12px; font-weight:650;"></p>
+  </div>
+</div>
+
+<!-- Secure Note Detail -->
+<div id="noteDetailModal" class="note-detail-modal hidden" role="dialog" aria-modal="true" aria-labelledby="noteDetailTitle">
+  <article class="note-detail-shell">
+    <button id="noteDetailClose" class="note-detail-close" type="button" aria-label="Đóng">✕</button>
+    <div class="note-detail-heading">
+      <div class="note-detail-icon">📝</div>
+      <div><small>GHI CHÚ BẢO MẬT</small><h3 id="noteDetailTitle">GHI CHÚ</h3></div>
+    </div>
+    <div id="noteDetailContent" class="note-detail-content"></div>
+    <div class="note-detail-actions">
+      <button id="noteDetailCopy" type="button">📋 Sao chép nội dung</button>
+    </div>
+  </article>
+</div>
+
+<!-- Payment Card Detail -->
+<div id="cardDetailModal" class="card-detail-modal hidden" role="dialog" aria-modal="true" aria-labelledby="cardDetailTitle">
+  <div class="card-detail-shell">
+    <button id="cardDetailClose" class="card-detail-close" type="button" aria-label="Đóng">✕</button>
+    <div class="real-card" id="realCardPreview">
+      <div class="real-card-top"><strong id="cardDetailTitle">THẺ THANH TOÁN</strong><span>AEGIS</span></div>
+      <div class="real-card-chip-row"><span class="real-card-chip"></span><span class="contactless">)))</span></div>
+      <div class="card-number-zone">
+        <button class="card-inline-copy card-number-copy" id="copyCardNumber" type="button" aria-label="Sao chép số thẻ" title="Sao chép số thẻ"></button>
+        <div class="real-card-number"><span id="cardDetailNumber">•••• •••• •••• ••••</span></div>
+      </div>
+      <div class="real-card-bottom">
+        <div><small>CHỦ THẺ</small><strong class="card-value-row"><span id="cardDetailHolder">—</span><button class="card-inline-copy" id="copyCardHolder" type="button" aria-label="Sao chép tên chủ thẻ" title="Sao chép tên chủ thẻ"></button></strong></div>
+        <div><small>VALID THRU</small><strong class="card-value-row"><span id="cardDetailExpiry">--/--</span><button class="card-inline-copy" id="copyCardExpiry" type="button" aria-label="Sao chép hạn thẻ" title="Sao chép hạn thẻ"></button></strong></div>
+        <div><small>CVV</small><strong class="card-cvv-detail"><span id="cardDetailCvv">•••</span><button id="cardDetailCvvToggle" type="button" aria-label="Hiện mã CVV" title="Hiện mã CVV"></button><button class="card-inline-copy" id="copyCardCvv" type="button" aria-label="Sao chép mã CVV" title="Sao chép mã CVV"></button></strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation -->
+<div id="deleteConfirmModal" class="confirm-modal hidden" role="dialog" aria-modal="true" aria-labelledby="deleteConfirmTitle">
+  <div class="confirm-card">
+    <div class="confirm-icon" aria-hidden="true">🗑️</div>
+    <h3 id="deleteConfirmTitle">Xóa thông tin?</h3>
+    <p id="deleteConfirmMessage">Bạn có đồng ý xóa thông tin này không?</p>
+    <div class="confirm-actions">
+      <button id="deleteConfirmCancel" type="button">Không xóa</button>
+      <button id="deleteConfirmAccept" type="button">Đồng ý xóa</button>
+    </div>
   </div>
 </div>
 
@@ -770,7 +1067,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     <div class="donate-header">
       <div class="donate-icon">☕</div>
       <div>
-        <h3 data-i18n="donateTitle">Ủng hộ tác giả (Donate)</h3>
+        <h3 data-i18n="donateTitle">Mời tôi một ly cà phê</h3>
         <p data-i18n="donateDesc">Cảm ơn bạn đã tin tưởng và sử dụng Aegis Vault! Mọi sự hỗ trợ của bạn là nguồn động lực rất lớn để tác giả duy trì và tiếp tục phát triển tiện ích.</p>
       </div>
     </div>

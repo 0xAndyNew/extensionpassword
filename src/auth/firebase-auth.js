@@ -112,7 +112,7 @@ async function clearTokens() {
 async function signInWithIdp(googleIdToken, redirectUri) {
   if (!isFirebaseConfigured()) {
     throw new FirebaseAuthError(
-      'Chưa cấu hình Firebase Project (apiKey/projectId) trong src/auth/firebase-config.js.',
+      'Chưa cấu hình Firebase API Key thực tế trong src/auth/firebase-config.js. Vui lòng cập nhật apiKey và projectId thực tế từ Firebase Console.',
       'FIREBASE_NOT_CONFIGURED'
     );
   }

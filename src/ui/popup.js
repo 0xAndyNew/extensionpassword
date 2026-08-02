@@ -124,6 +124,9 @@ async function init() {
   // Khởi tạo các trình lắng nghe sự kiện của Password Generator
   initGenerator();
   initPasswordToggles();
+  if ($('optionsButton')) {
+    $('optionsButton').onclick = () => chrome.runtime.openOptionsPage();
+  }
 }
 
 function initPasswordToggles() {

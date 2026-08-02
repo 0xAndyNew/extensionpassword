@@ -72,7 +72,16 @@ const MUTATING_ACTIONS = new Set([
   'OTP_IMPORT_COMMIT',
   'IMPORT_ENCRYPTED_BACKUP',
   'RESOLVE_SYNC_CONFLICT',
-  'CHANGE_PASSWORD'
+  'CHANGE_PASSWORD',
+  'SAVE_NOTE',
+  'DELETE_NOTE',
+  'SAVE_CARD',
+  'DELETE_CARD',
+  'SAVE_IDENTITY',
+  'DELETE_IDENTITY',
+  'RESTORE_TRASH',
+  'DELETE_PERMANENTLY',
+  'EMPTY_TRASH'
 ]);
 
 const AUTO_DRIVE_ACTIONS = new Set([
@@ -616,9 +625,42 @@ async function handle(rawMessage, context) {
       { kind: 'credential-upsert', id: savedItem.id }
     ]);
   }
+  if (message.type === 'LIST_ALL') {
+    return {
+      credentials: vault.credentials || [],
+      otpAccounts: vault.otpAccounts || [],
+      notes: vault.notes || [],
+      cards: vault.cards || [],
+      identities: vault.identities || [],
+      trash: vault.trash || []
+    };
+  }
+
+  if (message.type === 'SAVE') {
+    const origin = normalizeOrigin(message.origin);
+    const savedItem = upsert(vault, {
+      origin,
+      username: asText(message.username, 'Tên đăng nhập', { required: true, max: MAX_USERNAME_LENGTH }).trim(),
+      password: asText(message.password, 'Mật khẩu', { required: true, max: MAX_PASSWORD_LENGTH }),
+      title: new URL(origin).hostname
+    });
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'credential-upsert', id: savedItem.id }
+    ]);
+  }
   if (message.type === 'DELETE') {
     const id = asId(message.id);
-    vault.credentials = vault.credentials.filter(item => item.id !== id);
+    const target = vault.credentials.find(item => item.id === id);
+    if (target) {
+      vault.credentials = vault.credentials.filter(item => item.id !== id);
+      if (!Array.isArray(vault.trash)) vault.trash = [];
+      vault.trash.push({
+        id: crypto.randomUUID(),
+        itemType: 'credential',
+        originalItem: target,
+        deletedAt: new Date().toISOString()
+      });
+    }
     return writeVaultLocalFirst(vault, password, user.sub, [
       { kind: 'credential-delete', id }
     ]);
@@ -628,13 +670,14 @@ async function handle(rawMessage, context) {
     const origin = url.origin;
     const id = message.id ? asId(message.id) : '';
     const now = new Date().toISOString();
+    const newPassword = asText(message.password, 'Mật khẩu', { required: true, max: MAX_PASSWORD_LENGTH });
     const updated = {
       title: asText(message.title, 'Tên mục', { max: 512 }).trim() || url.hostname,
       url: url.href,
       origins: [origin],
       origin,
       username: asText(message.username, 'Tên đăng nhập', { required: true, max: MAX_USERNAME_LENGTH }).trim(),
-      password: asText(message.password, 'Mật khẩu', { required: true, max: MAX_PASSWORD_LENGTH }),
+      password: newPassword,
       notes: asText(message.notes, 'Ghi chú', { max: MAX_NOTES_LENGTH }),
       favorite: Boolean(message.favorite),
       updatedAt: now
@@ -642,6 +685,16 @@ async function handle(rawMessage, context) {
     if (id) {
       const item = vault.credentials.find(value => value.id === id);
       if (!item) throw new Error('Không tìm thấy tài khoản.');
+      if (item.password && item.password !== newPassword) {
+        if (!Array.isArray(item.passwordHistory)) item.passwordHistory = [];
+        item.passwordHistory.unshift({
+          password: item.password,
+          changedAt: now
+        });
+        if (item.passwordHistory.length > 5) {
+          item.passwordHistory = item.passwordHistory.slice(0, 5);
+        }
+      }
       Object.assign(item, updated);
     } else {
       vault.credentials.push({
@@ -654,6 +707,196 @@ async function handle(rawMessage, context) {
     const savedId = id || vault.credentials[vault.credentials.length - 1].id;
     return writeVaultLocalFirst(vault, password, user.sub, [
       { kind: 'credential-upsert', id: savedId }
+    ]);
+  }
+
+  // --- Secure Notes Handlers ---
+  if (message.type === 'SAVE_NOTE') {
+    if (!Array.isArray(vault.notes)) vault.notes = [];
+    const id = message.id ? asId(message.id) : '';
+    const now = new Date().toISOString();
+    const noteData = {
+      title: asText(message.title, 'Tiêu đề ghi chú', { required: true, max: 512 }).trim(),
+      notes: asText(message.notes, 'Nội dung ghi chú', { required: true, max: MAX_NOTES_LENGTH }),
+      favorite: Boolean(message.favorite),
+      updatedAt: now
+    };
+    let savedId;
+    if (id) {
+      const existing = vault.notes.find(n => n.id === id);
+      if (!existing) throw new Error('Không tìm thấy ghi chú.');
+      Object.assign(existing, noteData);
+      savedId = id;
+    } else {
+      savedId = crypto.randomUUID();
+      vault.notes.push({ id: savedId, ...noteData, createdAt: now });
+    }
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'note-upsert', id: savedId }
+    ]);
+  }
+  if (message.type === 'DELETE_NOTE') {
+    const id = asId(message.id);
+    if (!Array.isArray(vault.notes)) vault.notes = [];
+    const target = vault.notes.find(n => n.id === id);
+    if (target) {
+      vault.notes = vault.notes.filter(n => n.id !== id);
+      if (!Array.isArray(vault.trash)) vault.trash = [];
+      vault.trash.push({
+        id: crypto.randomUUID(),
+        itemType: 'note',
+        originalItem: target,
+        deletedAt: new Date().toISOString()
+      });
+    }
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'note-delete', id }
+    ]);
+  }
+
+  // --- Payment Cards Handlers ---
+  if (message.type === 'SAVE_CARD') {
+    if (!Array.isArray(vault.cards)) vault.cards = [];
+    const id = message.id ? asId(message.id) : '';
+    const now = new Date().toISOString();
+    const cardData = {
+      title: asText(message.title, 'Tên thẻ / Ngân hàng', { required: true, max: 512 }).trim(),
+      cardholderName: asText(message.cardholderName, 'Tên chủ thẻ', { max: 512 }).trim(),
+      cardNumber: asText(message.cardNumber, 'Số thẻ', { max: 64 }).trim(),
+      expMonth: asText(message.expMonth, 'Tháng hết hạn', { max: 8 }).trim(),
+      expYear: asText(message.expYear, 'Năm hết hạn', { max: 8 }).trim(),
+      cvv: asText(message.cvv, 'Mã CVV', { max: 16 }).trim(),
+      notes: asText(message.notes, 'Ghi chú', { max: MAX_NOTES_LENGTH }),
+      favorite: Boolean(message.favorite),
+      updatedAt: now
+    };
+    let savedId;
+    if (id) {
+      const existing = vault.cards.find(c => c.id === id);
+      if (!existing) throw new Error('Không tìm thấy thẻ.');
+      Object.assign(existing, cardData);
+      savedId = id;
+    } else {
+      savedId = crypto.randomUUID();
+      vault.cards.push({ id: savedId, ...cardData, createdAt: now });
+    }
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'card-upsert', id: savedId }
+    ]);
+  }
+  if (message.type === 'DELETE_CARD') {
+    const id = asId(message.id);
+    if (!Array.isArray(vault.cards)) vault.cards = [];
+    const target = vault.cards.find(c => c.id === id);
+    if (target) {
+      vault.cards = vault.cards.filter(c => c.id !== id);
+      if (!Array.isArray(vault.trash)) vault.trash = [];
+      vault.trash.push({
+        id: crypto.randomUUID(),
+        itemType: 'card',
+        originalItem: target,
+        deletedAt: new Date().toISOString()
+      });
+    }
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'card-delete', id }
+    ]);
+  }
+
+  // --- Personal Identity Handlers ---
+  if (message.type === 'SAVE_IDENTITY') {
+    if (!Array.isArray(vault.identities)) vault.identities = [];
+    const id = message.id ? asId(message.id) : '';
+    const now = new Date().toISOString();
+    const identityData = {
+      title: asText(message.title, 'Tên hồ sơ', { required: true, max: 512 }).trim(),
+      fullName: asText(message.fullName, 'Họ và tên', { max: 512 }).trim(),
+      email: asText(message.email, 'Email', { max: 320 }).trim(),
+      phone: asText(message.phone, 'Số điện thoại', { max: 64 }).trim(),
+      address: asText(message.address, 'Địa chỉ', { max: 1024 }).trim(),
+      city: asText(message.city, 'Thành phố', { max: 256 }).trim(),
+      zipCode: asText(message.zipCode, 'Mã Bưu điện / Zip', { max: 32 }).trim(),
+      country: asText(message.country, 'Quốc gia', { max: 128 }).trim(),
+      notes: asText(message.notes, 'Ghi chú', { max: MAX_NOTES_LENGTH }),
+      favorite: Boolean(message.favorite),
+      updatedAt: now
+    };
+    let savedId;
+    if (id) {
+      const existing = vault.identities.find(i => i.id === id);
+      if (!existing) throw new Error('Không tìm thấy hồ sơ định danh.');
+      Object.assign(existing, identityData);
+      savedId = id;
+    } else {
+      savedId = crypto.randomUUID();
+      vault.identities.push({ id: savedId, ...identityData, createdAt: now });
+    }
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'identity-upsert', id: savedId }
+    ]);
+  }
+  if (message.type === 'DELETE_IDENTITY') {
+    const id = asId(message.id);
+    if (!Array.isArray(vault.identities)) vault.identities = [];
+    const target = vault.identities.find(i => i.id === id);
+    if (target) {
+      vault.identities = vault.identities.filter(i => i.id !== id);
+      if (!Array.isArray(vault.trash)) vault.trash = [];
+      vault.trash.push({
+        id: crypto.randomUUID(),
+        itemType: 'identity',
+        originalItem: target,
+        deletedAt: new Date().toISOString()
+      });
+    }
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'identity-delete', id }
+    ]);
+  }
+
+  // --- Trash / Recycle Bin Handlers ---
+  if (message.type === 'RESTORE_TRASH') {
+    const id = asId(message.id);
+    if (!Array.isArray(vault.trash)) vault.trash = [];
+    const trashIndex = vault.trash.findIndex(t => t.id === id);
+    if (trashIndex === -1) throw new Error('Không tìm thấy mục trong thùng rác.');
+    const trashEntry = vault.trash[trashIndex];
+    const { itemType, originalItem } = trashEntry;
+
+    if (itemType === 'credential') {
+      if (!Array.isArray(vault.credentials)) vault.credentials = [];
+      vault.credentials.push(originalItem);
+    } else if (itemType === 'otp') {
+      if (!Array.isArray(vault.otpAccounts)) vault.otpAccounts = [];
+      vault.otpAccounts.push(originalItem);
+    } else if (itemType === 'note') {
+      if (!Array.isArray(vault.notes)) vault.notes = [];
+      vault.notes.push(originalItem);
+    } else if (itemType === 'card') {
+      if (!Array.isArray(vault.cards)) vault.cards = [];
+      vault.cards.push(originalItem);
+    } else if (itemType === 'identity') {
+      if (!Array.isArray(vault.identities)) vault.identities = [];
+      vault.identities.push(originalItem);
+    }
+    vault.trash.splice(trashIndex, 1);
+
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: `${itemType}-restore`, id: originalItem.id }
+    ]);
+  }
+  if (message.type === 'DELETE_PERMANENTLY') {
+    const id = asId(message.id);
+    if (!Array.isArray(vault.trash)) vault.trash = [];
+    vault.trash = vault.trash.filter(t => t.id !== id);
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'trash-delete', id }
+    ]);
+  }
+  if (message.type === 'EMPTY_TRASH') {
+    vault.trash = [];
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'trash-empty', id: 'all' }
     ]);
   }
   if (message.type === 'IMPORT_PREVIEW' || message.type === 'IMPORT_COMMIT') {
@@ -719,7 +962,17 @@ async function handle(rawMessage, context) {
   }
   if (message.type === 'OTP_DELETE') {
     const id = asId(message.id);
-    vault.otpAccounts = otpAccounts.filter(item => item.id !== id);
+    const target = otpAccounts.find(item => item.id === id);
+    if (target) {
+      vault.otpAccounts = otpAccounts.filter(item => item.id !== id);
+      if (!Array.isArray(vault.trash)) vault.trash = [];
+      vault.trash.push({
+        id: crypto.randomUUID(),
+        itemType: 'otp',
+        originalItem: target,
+        deletedAt: new Date().toISOString()
+      });
+    }
     const localWrite = await writeVaultLocalFirst(vault, password, user.sub, [
       { kind: 'otp-delete', id }
     ]);

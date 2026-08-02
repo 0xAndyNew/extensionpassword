@@ -19,12 +19,12 @@ test('t() returns correct translation for selected language', async () => {
   await setLanguage('en');
   assert.equal(t('searchPlaceholder'), 'Search Aegis Vault...');
   assert.equal(t('tabLogins'), '🔑 Logins');
-  assert.equal(t('topDonateBtn'), '☕ Support Author');
+  assert.equal(t('topDonateBtn'), '☕ Buy me a coffee');
 
   await setLanguage('vi');
   assert.equal(t('searchPlaceholder'), 'Tìm kiếm Aegis Vault...');
-  assert.equal(t('tabLogins'), '🔑 Logins');
-  assert.equal(t('topDonateBtn'), '☕ Ủng hộ tác giả');
+  assert.equal(t('tabLogins'), '🔑 Tài khoản đăng nhập');
+  assert.equal(t('topDonateBtn'), '☕ Mời tôi một ly cà phê');
 
   // Fallback to key or fallback string if missing key
   assert.equal(t('nonExistentKey', 'Default Fallback'), 'Default Fallback');
@@ -60,7 +60,7 @@ test('translateDocument updates DOM elements correctly', async () => {
   await setLanguage('vi');
   translateDocument(fakeDoc);
 
-  assert.equal(elements[0].textContent, '🔑 Logins');
+  assert.equal(elements[0].textContent, '🔑 Tài khoản đăng nhập');
   assert.equal(elements[1].placeholder, 'Tìm kiếm Aegis Vault...');
   assert.equal(elements[2].title, 'Trợ giúp');
 });

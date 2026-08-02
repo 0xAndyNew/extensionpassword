@@ -186,11 +186,58 @@ export function validateVaultData(
     if (item.favorite !== undefined && typeof item.favorite !== 'boolean') {
       throw new Error('Trạng thái yêu thích của tài khoản không hợp lệ.');
     }
+    if (item.passwordHistory !== undefined) {
+      if (!Array.isArray(item.passwordHistory) || item.passwordHistory.length > 50 ||
+          item.passwordHistory.some(ph => !isPlainObject(ph) || typeof ph.password !== 'string' || typeof ph.changedAt !== 'string')) {
+        throw new Error('Lịch sử mật khẩu của tài khoản không hợp lệ.');
+      }
+    }
   }
   if (data.otpAccounts !== undefined && (!Array.isArray(data.otpAccounts) || data.otpAccounts.length > 100000)) {
     throw new Error('Danh sách OTP trong vault không hợp lệ.');
   }
   for (const item of data.otpAccounts || []) validateOtpAccount(item, { strict: strictOtp });
+  if (data.notes !== undefined && (!Array.isArray(data.notes) || data.notes.length > 100000)) {
+    throw new Error('Danh sách ghi chú trong vault không hợp lệ.');
+  }
+  for (const item of data.notes || []) {
+    if (!isPlainObject(item)) throw new Error('Ghi chú trong vault không hợp lệ.');
+    for (const field of ['id', 'title', 'notes', 'createdAt', 'updatedAt']) {
+      if (item[field] !== undefined && (typeof item[field] !== 'string' || item[field].length > 1_000_000)) {
+        throw new Error('Ghi chú trong vault không hợp lệ.');
+      }
+    }
+  }
+  if (data.cards !== undefined && (!Array.isArray(data.cards) || data.cards.length > 100000)) {
+    throw new Error('Danh sách thẻ trong vault không hợp lệ.');
+  }
+  for (const item of data.cards || []) {
+    if (!isPlainObject(item)) throw new Error('Thẻ trong vault không hợp lệ.');
+    for (const field of ['id', 'title', 'cardholderName', 'cardNumber', 'expMonth', 'expYear', 'cvv', 'notes', 'createdAt', 'updatedAt']) {
+      if (item[field] !== undefined && (typeof item[field] !== 'string' || item[field].length > 1_000_000)) {
+        throw new Error('Thẻ trong vault không hợp lệ.');
+      }
+    }
+  }
+  if (data.identities !== undefined && (!Array.isArray(data.identities) || data.identities.length > 100000)) {
+    throw new Error('Danh sách định danh trong vault không hợp lệ.');
+  }
+  for (const item of data.identities || []) {
+    if (!isPlainObject(item)) throw new Error('Định danh trong vault không hợp lệ.');
+    for (const field of ['id', 'title', 'fullName', 'email', 'phone', 'address', 'city', 'zipCode', 'country', 'notes', 'createdAt', 'updatedAt']) {
+      if (item[field] !== undefined && (typeof item[field] !== 'string' || item[field].length > 1_000_000)) {
+        throw new Error('Định danh trong vault không hợp lệ.');
+      }
+    }
+  }
+  if (data.trash !== undefined && (!Array.isArray(data.trash) || data.trash.length > 100000)) {
+    throw new Error('Danh sách thùng rác trong vault không hợp lệ.');
+  }
+  for (const item of data.trash || []) {
+    if (!isPlainObject(item) || typeof item.id !== 'string' || typeof item.itemType !== 'string' || !isPlainObject(item.originalItem) || typeof item.deletedAt !== 'string') {
+      throw new Error('Mục thùng rác trong vault không hợp lệ.');
+    }
+  }
   if (data.excludedOrigins !== undefined && (
     !Array.isArray(data.excludedOrigins)
     || data.excludedOrigins.length > 100000
@@ -399,6 +446,40 @@ export function mergeVaultData(localData, remoteData) {
         const idx = merged.otpAccounts.findIndex(o => o.id === localOtp.id);
         if (idx >= 0) merged.otpAccounts[idx] = cloneVaultData(localOtp);
       }
+    }
+  }
+
+  // Helper for generic items (notes, cards, identities)
+  const mergeGenericArray = (propName) => {
+    merged[propName] = Array.isArray(merged[propName]) ? merged[propName] : [];
+    const remoteMap = new Map(merged[propName].map(item => [item.id, item]));
+    const localItems = Array.isArray(localData[propName]) ? localData[propName] : [];
+    for (const localItem of localItems) {
+      if (!remoteMap.has(localItem.id)) {
+        merged[propName].push(cloneVaultData(localItem));
+      } else {
+        const remoteItem = remoteMap.get(localItem.id);
+        const localTime = Date.parse(localItem.updatedAt || localItem.createdAt || 0);
+        const remoteTime = Date.parse(remoteItem.updatedAt || remoteItem.createdAt || 0);
+        if (localTime > remoteTime) {
+          const idx = merged[propName].findIndex(i => i.id === localItem.id);
+          if (idx >= 0) merged[propName][idx] = cloneVaultData(localItem);
+        }
+      }
+    }
+  };
+
+  mergeGenericArray('notes');
+  mergeGenericArray('cards');
+  mergeGenericArray('identities');
+
+  // Merge Trash
+  merged.trash = Array.isArray(merged.trash) ? merged.trash : [];
+  const remoteTrashMap = new Map(merged.trash.map(t => [t.id, t]));
+  const localTrash = Array.isArray(localData.trash) ? localData.trash : [];
+  for (const localT of localTrash) {
+    if (!remoteTrashMap.has(localT.id)) {
+      merged.trash.push(cloneVaultData(localT));
     }
   }
 
@@ -1375,6 +1456,10 @@ export async function createVault(password, user) {
     owner: { googleSub: user.sub, email: user.email },
     credentials: [],
     otpAccounts: [],
+    notes: [],
+    cards: [],
+    identities: [],
+    trash: [],
     excludedOrigins: [],
     settings: {}
   };
@@ -1434,6 +1519,10 @@ export async function unlockVault(password, user) {
   let needsWrite = sourceWasLegacyCommon || !data.owner || !Array.isArray(data.otpAccounts) || !data._meta;
   if (!data.owner) data.owner = { googleSub: user.sub, email: user.email };
   if (!Array.isArray(data.otpAccounts)) data.otpAccounts = [];
+  if (!Array.isArray(data.notes)) data.notes = [];
+  if (!Array.isArray(data.cards)) data.cards = [];
+  if (!Array.isArray(data.identities)) data.identities = [];
+  if (!Array.isArray(data.trash)) data.trash = [];
   if (!Array.isArray(data.excludedOrigins)) {
     data.excludedOrigins = [];
     needsWrite = true;
@@ -1442,6 +1531,19 @@ export async function unlockVault(password, user) {
     data.settings = {};
     needsWrite = true;
   }
+
+  // Clean up trash entries older than 30 days
+  const nowMs = Date.now();
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  const initialTrashLength = data.trash.length;
+  data.trash = data.trash.filter(item => {
+    const deletedMs = Date.parse(item.deletedAt || 0);
+    return Number.isFinite(deletedMs) && (nowMs - deletedMs) <= thirtyDaysMs;
+  });
+  if (data.trash.length !== initialTrashLength) {
+    needsWrite = true;
+  }
+
   if (needsWrite) {
     await writeVaultInternal(data, password, user.sub);
     if (sourceWasLegacyCommon) await persistLegacyOwnerClaim(user.sub);

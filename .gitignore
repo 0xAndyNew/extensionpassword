@@ -1,5 +1,16 @@
 node_modules/
 dist/
+coverage/
+.cache/
+tmp/
+temp/
+*.log
+*.tmp
+*.temp
+*.bak
+*~
+.DS_Store
+Thumbs.db
 *.pem
 *.key
 *.p12
