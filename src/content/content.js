@@ -31,25 +31,28 @@
     .icon {
       position: fixed;
       z-index: 2;
-      width: 22px;
-      height: 22px;
+      width: 28px;
+      height: 28px;
       margin: 0;
       padding: 0;
-      border: 1px solid rgba(255, 255, 255, 0.34);
-      border-radius: 6px;
-      background: linear-gradient(135deg, #0071e3, #00a8d9);
-      box-shadow: 0 2px 8px rgba(0, 54, 105, 0.35);
-      color: #fff;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
       cursor: pointer;
       display: grid;
       place-items: center;
-      font-size: 11px;
-      font-weight: 800;
-      line-height: 1;
       pointer-events: auto;
     }
+    .icon img {
+      display: block;
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      pointer-events: none;
+    }
     .icon:hover {
-      transform: scale(1.06);
+      filter: brightness(1.08);
     }
     .icon:focus-visible,
     .menu button:focus-visible,
@@ -222,6 +225,7 @@
   let activeBanner = null;
   let activeBannerTimer = null;
   let positionFrame = 0;
+  let positionTrackingUntil = 0;
   let wireFrame = 0;
   let pendingSaveTimer = null;
   let lastCaptureKey = '';
@@ -255,8 +259,9 @@
     if (positionFrame) cancelAnimationFrame(positionFrame);
     if (wireFrame) cancelAnimationFrame(wireFrame);
     positionFrame = 0;
+    positionTrackingUntil = 0;
     wireFrame = 0;
-    window.removeEventListener('resize', schedulePosition);
+    window.removeEventListener('resize', handleWindowResize);
     window.removeEventListener('scroll', schedulePosition, true);
     window.removeEventListener('focus', handleWindowFocus);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -507,6 +512,45 @@
     return candidates[0]?.score > 0 ? candidates[0].input : null;
   }
 
+  function collectIdentityHints(passwordInput, credentials) {
+    const ranking = globalThis.AegisSuggestionRanking;
+    if (!ranking) return [];
+
+    const hints = [];
+    const addHint = value => {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (normalized && !hints.some(item => item.toLowerCase() === normalized)) hints.push(String(value).trim());
+    };
+
+    const usernameInput = findUsernameField(passwordInput);
+    if (usernameInput?.value) addHint(usernameInput.value);
+
+    const regions = [];
+    const seen = new Set();
+    const addRegion = element => {
+      if (!element || seen.has(element)) return;
+      seen.add(element);
+      regions.push(element);
+    };
+    addRegion(passwordInput.form);
+    let ancestor = passwordInput.parentElement;
+    for (let depth = 0; ancestor && depth < 6; depth += 1, ancestor = ancestor.parentElement) {
+      addRegion(ancestor);
+    }
+    addRegion(document.body);
+
+    for (const region of regions) {
+      const visibleText = region.innerText || '';
+      if (!visibleText) continue;
+      for (const credential of credentials) {
+        if (ranking.textContainsIdentity(visibleText, credential?.username)) {
+          addHint(credential.username);
+        }
+      }
+    }
+    return hints;
+  }
+
   function setNativeValue(input, value) {
     if (!(input instanceof HTMLInputElement) || !input.isConnected) return false;
     const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
@@ -557,8 +601,8 @@
         continue;
       }
 
-      const iconSize = 22;
-      const gap = 6;
+      const iconSize = 28;
+      const inset = 5;
       const edge = 4;
       const maxLeft = Math.max(edge, window.innerWidth - iconSize - edge);
       const maxTop = Math.max(edge, window.innerHeight - iconSize - edge);
@@ -566,23 +610,9 @@
         edge,
         rect.top + (rect.height - iconSize) / 2
       ));
-      const spaceOnRight = window.innerWidth - rect.right;
-      const spaceOnLeft = rect.left;
-      let left;
-      let top = centeredTop;
-
-      if (spaceOnRight >= iconSize + gap + edge) {
-        left = rect.right + gap;
-      } else if (spaceOnLeft >= iconSize + gap + edge) {
-        left = rect.left - iconSize - gap;
-      } else {
-        left = Math.min(maxLeft, Math.max(edge, rect.right - iconSize));
-        const above = rect.top - iconSize - gap;
-        const below = rect.bottom + gap;
-        top = above >= edge
-          ? above
-          : Math.min(maxTop, Math.max(edge, below));
-      }
+      const minimumInsideLeft = Math.max(edge, rect.left + 2);
+      const left = Math.min(maxLeft, Math.max(minimumInsideLeft, rect.right - iconSize - inset));
+      const top = centeredTop;
 
       icon.style.left = `${left}px`;
       icon.style.top = `${top}px`;
@@ -593,11 +623,20 @@
       if (isVisible(activeMenuInput)) placeMenu(activeMenu, activeMenuInput);
       else closeMenu();
     }
+
+    if (performance.now() < positionTrackingUntil) {
+      positionFrame = requestAnimationFrame(positionUi);
+    }
   }
 
   function schedulePosition() {
     if (!contextValid || positionFrame) return;
     positionFrame = requestAnimationFrame(positionUi);
+  }
+
+  function trackPosition(duration = 900) {
+    positionTrackingUntil = Math.max(positionTrackingUntil, performance.now() + duration);
+    schedulePosition();
   }
 
   function appendTwoLineText(button, primary, secondary) {
@@ -669,7 +708,12 @@
         }
       ));
     } else {
-      for (const item of response.credentials) {
+      const ranking = globalThis.AegisSuggestionRanking;
+      const identityHints = collectIdentityHints(input, response.credentials);
+      const rankedCredentials = ranking
+        ? ranking.rankCredentials(response.credentials, { identityHints, pageUrl: location.href })
+        : response.credentials;
+      for (const item of rankedCredentials) {
         if (!item || typeof item.id !== 'string') continue;
         const username = typeof item.username === 'string' && item.username
           ? item.username
@@ -706,7 +750,10 @@
     const icon = document.createElement('button');
     icon.type = 'button';
     icon.className = 'icon';
-    icon.textContent = 'A';
+    const logo = document.createElement('img');
+    logo.src = chrome.runtime.getURL('src/ui/logo-48.png');
+    logo.alt = '';
+    icon.appendChild(logo);
     icon.title = 'Tài khoản từ Aegis Vault';
     icon.setAttribute('aria-label', 'Xem tài khoản từ Aegis Vault');
     icon.addEventListener('click', (event) => {
@@ -717,6 +764,7 @@
     });
     uiLayer.appendChild(icon);
     icons.set(input, icon);
+    trackPosition();
   }
 
   function getLoginCandidate(passwordInput) {
@@ -1361,7 +1409,14 @@
   }
 
   function handleWindowFocus() {
-    if (contextValid) void refreshAccess();
+    if (contextValid) {
+      trackPosition();
+      void refreshAccess();
+    }
+  }
+
+  function handleWindowResize() {
+    trackPosition();
   }
 
   function handleVisibilityChange() {
@@ -1380,7 +1435,10 @@
     return;
   }
 
-  mutationObserver = new MutationObserver(() => scheduleWire());
+  mutationObserver = new MutationObserver(() => {
+    scheduleWire();
+    trackPosition();
+  });
   mutationObserver.observe(document.documentElement, {
     childList: true,
     subtree: true,
@@ -1388,7 +1446,7 @@
     attributeFilter: ['type', 'style', 'class', 'disabled', 'readonly']
   });
 
-  window.addEventListener('resize', schedulePosition, { passive: true });
+  window.addEventListener('resize', handleWindowResize, { passive: true });
   window.addEventListener('scroll', schedulePosition, { capture: true, passive: true });
   window.addEventListener('focus', handleWindowFocus);
   document.addEventListener('visibilitychange', handleVisibilityChange);

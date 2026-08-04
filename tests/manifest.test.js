@@ -10,4 +10,12 @@ test('manifest host permissions are limited to the Firebase APIs used in product
     'https://firestore.googleapis.com/*'
   ]);
   assert.equal(manifest.content_scripts[0].matches.includes('http://*/*'), false);
+  assert.deepEqual(manifest.content_scripts[0].js.slice(0, 2), [
+    'src/content/suggestion-ranking.js',
+    'src/content/content.js'
+  ]);
+  assert.deepEqual(manifest.web_accessible_resources, [{
+    resources: ['src/ui/logo-48.png'],
+    matches: ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*']
+  }]);
 });

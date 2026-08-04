@@ -49,11 +49,24 @@
                                                 "http://127.0.0.1/*"
                                             ],
                                 "js":  [
+                                           "src/content/suggestion-ranking.js",
                                            "src/content/content.js"
                                        ],
                                 "run_at":  "document_idle"
                             }
                         ],
+    "web_accessible_resources":  [
+                                     {
+                                         "resources":  [
+                                                           "src/ui/logo-48.png"
+                                                       ],
+                                         "matches":  [
+                                                         "https://*/*",
+                                                         "http://localhost/*",
+                                                         "http://127.0.0.1/*"
+                                                     ]
+                                     }
+                                 ],
     "content_security_policy":  {
                                     "extension_pages":  "script-src \u0027self\u0027; object-src \u0027self\u0027"
                                 },
