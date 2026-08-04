@@ -30,7 +30,7 @@ test('parses and serializes authenticator text in order', () => {
   assert.equal(parseOtpAuthUri(serializeAuthenticatorText(parsed.records)).account, 'user');
 });
 
-test('reorders known OTP entries while preserving newer Drive-only entries', () => {
+test('reorders known OTP entries while preserving newer Firestore-only entries', () => {
   const accounts = [
     { id: 'a' },
     { id: 'drive-only' },

@@ -8,7 +8,7 @@ import {
   getSessionPassword,
   lockVault,
   changeMasterPassword,
-  syncFromGDrive,
+  syncFromFirestore,
   getSyncStatus,
   manualSyncVault,
   exportEncryptedBackup,
@@ -20,6 +20,7 @@ import {
 } from './vault/repository.js';
 import { matchesOrigin, normalizeOrigin } from './vault/domain-policy.js';
 import { parseLastPassCsv, serializeLastPassCsv } from './vault/csv.js';
+import { getLanguage, localizeRuntimeText } from './i18n.js';
 import {
   getFirebaseUser as getGoogleUser,
   signInWithFirebase as signInWithGoogle,
@@ -34,7 +35,8 @@ import {
   reorderOtpAccounts
 } from './vault/totp.js';
 import { authorizeMessage } from './message-policy.js';
-import { abortActiveSyncRequests as abortActiveDriveRequests } from './vault/firebase-sync.js';
+import { resolveTrustedCaptureOrigin } from './login-capture.js';
+import { abortActiveSyncRequests } from './vault/firestore-sync.js';
 import {
   PENDING_MUTATIONS_VERSION,
   MAX_PENDING_MUTATIONS,
@@ -62,6 +64,7 @@ const MUTATING_ACTIONS = new Set([
   'ADOPT_STAGED_REMOTE',
   'SYNC_NOW',
   'SAVE',
+  'UPDATE_CAPTURE_PASSWORD',
   'DELETE',
   'UPDATE_ITEM',
   'IMPORT_COMMIT',
@@ -84,12 +87,48 @@ const MUTATING_ACTIONS = new Set([
   'EMPTY_TRASH'
 ]);
 
-const AUTO_DRIVE_ACTIONS = new Set([
+const AUTO_SYNC_ACTIONS = new Set([
   'IMPORT_ENCRYPTED_BACKUP'
 ]);
 
 let mutationTail = Promise.resolve();
 let automaticSyncInFlight = false;
+const LOGIN_CAPTURE_TTL_MS = 2 * 60 * 1000;
+const LOGIN_USERNAME_TTL_MS = 5 * 60 * 1000;
+
+function loginCaptureKey(context) {
+  if (!Number.isInteger(context?.tabId) || !Number.isInteger(context?.frameId)) return '';
+  return `aegisLoginCapture_${context.tabId}_${context.frameId}`;
+}
+
+async function readLoginCapture(context) {
+  const key = loginCaptureKey(context);
+  if (!key) return null;
+  const capture = (await chrome.storage.session.get(key))[key];
+  if (!capture || capture.expiresAt <= Date.now()) {
+    await chrome.storage.session.remove(key);
+    return null;
+  }
+  return capture;
+}
+
+async function removeLoginCapture(context) {
+  const key = loginCaptureKey(context);
+  if (key) await chrome.storage.session.remove(key);
+}
+
+async function resolveLoginCaptureOrigin(message, context, username, candidatePassword) {
+  const capture = context.kind === 'content' && message.captureOrigin
+    ? await readLoginCapture(context)
+    : null;
+  return resolveTrustedCaptureOrigin({
+    currentOrigin: message.origin,
+    requestedOrigin: message.captureOrigin,
+    capture,
+    username,
+    password: candidatePassword
+  });
+}
 
 function enqueueMutation(operation) {
   const run = mutationTail.then(operation, operation);
@@ -301,7 +340,7 @@ async function writeVaultLocalFirst(vault, password, googleSub, operations) {
     syncStatus: {
       state: 'pending',
       direction: 'upload',
-      message: 'Đã lưu an toàn trên máy và đang tự đồng bộ Drive.'
+      message: 'Đã lưu an toàn trên máy và đang tự đồng bộ Firestore.'
     },
     queueAutomaticSync: true
   };
@@ -311,7 +350,7 @@ async function scheduleDeferredQrSync(delayMs = 5000) {
   try {
     await chrome.alarms.create(DEFERRED_QR_SYNC_ALARM, { when: Date.now() + delayMs });
   } catch {
-    // The OTP is already encrypted locally. A later normal sync can retry Drive.
+    // The OTP is already encrypted locally. A later normal sync can retry Firestore.
   }
 }
 
@@ -351,7 +390,7 @@ async function getStatus(user, { checkRemote = true } = {}) {
 
   if (!hasLocal && checkRemote && ['idle', 'error'].includes(syncStatus.state)) {
     try {
-      await syncFromGDrive(user.sub);
+      await syncFromFirestore(user.sub);
     } catch {
       // The persisted sync status contains the actionable error.
     }
@@ -414,10 +453,10 @@ async function handle(rawMessage, context) {
     if (!previousUser || previousUser.sub !== user.sub) await lockVault();
     const sessionPassword = await getSessionPassword();
     try {
-      await syncFromGDrive(
+      await syncFromFirestore(
         user.sub,
         sessionPassword,
-        { preferDrive: Boolean(sessionPassword) }
+        { preferRemote: Boolean(sessionPassword) }
       );
     } catch {
       // Sign-in remains valid; the UI receives the persisted sync error.
@@ -432,6 +471,49 @@ async function handle(rawMessage, context) {
   if (message.type === 'OPEN_OPTIONS') {
     await chrome.runtime.openOptionsPage();
     return {};
+  }
+  if (message.type === 'STAGE_LOGIN_CAPTURE') {
+    if (context.kind !== 'content') throw new Error('Nguồn đăng nhập không hợp lệ.');
+    const key = loginCaptureKey(context);
+    if (!key) throw new Error('Tab hoặc frame đăng nhập không hợp lệ.');
+    const username = asText(message.username, 'Tên đăng nhập', { max: MAX_USERNAME_LENGTH }).trim();
+    const candidatePassword = asText(message.password, 'Mật khẩu', { max: MAX_PASSWORD_LENGTH });
+    if (!username && !candidatePassword) throw new Error('Candidate đăng nhập trống.');
+    await chrome.storage.session.set({
+      [key]: {
+        version: 1,
+        sourceOrigin: context.origin,
+        sourceUrl: context.url,
+        documentId: context.documentId,
+        tabId: context.tabId,
+        frameId: context.frameId,
+        username,
+        password: candidatePassword,
+        intent: message.intent === 'update' ? 'update' : candidatePassword ? 'login' : 'username',
+        createdAt: Date.now(),
+        expiresAt: Date.now() + (candidatePassword ? LOGIN_CAPTURE_TTL_MS : LOGIN_USERNAME_TTL_MS)
+      }
+    });
+    return { staged: true };
+  }
+  if (message.type === 'TAKE_LOGIN_CAPTURE') {
+    if (context.kind !== 'content') throw new Error('Nguồn đăng nhập không hợp lệ.');
+    const capture = await readLoginCapture(context);
+    if (!capture) return { capture: null };
+    return {
+      capture: {
+        username: capture.username,
+        password: capture.password,
+        intent: capture.intent,
+        sourceOrigin: capture.sourceOrigin,
+        sourceUrl: capture.sourceUrl
+      }
+    };
+  }
+  if (message.type === 'DISMISS_LOGIN_CAPTURE') {
+    if (context.kind !== 'content') throw new Error('Nguồn đăng nhập không hợp lệ.');
+    await removeLoginCapture(context);
+    return { dismissed: true };
   }
   if (message.type === 'CAPTURE_QR_SELECTION') {
     if (context.kind !== 'content' || !Number.isInteger(context.tabId)) {
@@ -466,14 +548,14 @@ async function handle(rawMessage, context) {
       await runAutomaticSync();
       result = { ok: true, status: await getSyncStatus(user.sub) };
     } else {
-      result = await syncFromGDrive(user.sub);
+      result = await syncFromFirestore(user.sub);
     }
     let status = result.status || await getSyncStatus(user.sub);
     if (exists && !password && result.remoteFound === false) {
       status = {
         ...status,
         state: 'locked',
-        message: 'Mở khóa Vault để tải bản local lên Google Drive.'
+        message: 'Mở khóa Vault để tải bản local lên Cloud Firestore.'
       };
     }
     return { status, syncResult: result };
@@ -612,6 +694,35 @@ async function handle(rawMessage, context) {
     ));
     return { exists };
   }
+  if (message.type === 'CHECK_CAPTURE_ACCOUNT') {
+    const username = asText(message.username, 'Tên đăng nhập', { required: true, max: MAX_USERNAME_LENGTH }).trim();
+    const candidatePassword = asText(message.password, 'Mật khẩu', { required: true, max: MAX_PASSWORD_LENGTH });
+    const origin = await resolveLoginCaptureOrigin(message, context, username, candidatePassword);
+    const credential = vault.credentials.find(item => matchesOrigin(item, origin) && item.username === username);
+    return {
+      found: Boolean(credential),
+      unchanged: Boolean(credential && credential.password === candidatePassword)
+    };
+  }
+  if (message.type === 'UPDATE_CAPTURE_PASSWORD') {
+    const username = asText(message.username, 'Tên đăng nhập', { required: true, max: MAX_USERNAME_LENGTH }).trim();
+    const newPassword = asText(message.password, 'Mật khẩu mới', { required: true, max: MAX_PASSWORD_LENGTH });
+    const origin = await resolveLoginCaptureOrigin(message, context, username, newPassword);
+    const credential = vault.credentials.find(item => matchesOrigin(item, origin) && item.username === username);
+    if (!credential) throw new Error('Không tìm thấy tài khoản cần cập nhật.');
+    if (credential.password === newPassword) return { unchanged: true };
+    const now = new Date().toISOString();
+    if (!Array.isArray(credential.passwordHistory)) credential.passwordHistory = [];
+    if (credential.password) {
+      credential.passwordHistory.unshift({ password: credential.password, changedAt: now });
+      credential.passwordHistory = credential.passwordHistory.slice(0, 5);
+    }
+    credential.password = newPassword;
+    credential.updatedAt = now;
+    return writeVaultLocalFirst(vault, password, user.sub, [
+      { kind: 'credential-upsert', id: credential.id }
+    ]);
+  }
   if (message.type === 'FILL') {
     const origin = await resolveExtensionFillOrigin(message, context);
     const id = asId(message.id);
@@ -621,11 +732,13 @@ async function handle(rawMessage, context) {
   }
 
   if (message.type === 'SAVE') {
-    const origin = normalizeOrigin(message.origin);
+    const username = asText(message.username, 'Tên đăng nhập', { required: true, max: MAX_USERNAME_LENGTH }).trim();
+    const candidatePassword = asText(message.password, 'Mật khẩu', { required: true, max: MAX_PASSWORD_LENGTH });
+    const origin = await resolveLoginCaptureOrigin(message, context, username, candidatePassword);
     const savedItem = upsert(vault, {
       origin,
-      username: asText(message.username, 'Tên đăng nhập', { required: true, max: MAX_USERNAME_LENGTH }).trim(),
-      password: asText(message.password, 'Mật khẩu', { required: true, max: MAX_PASSWORD_LENGTH }),
+      username,
+      password: candidatePassword,
       title: new URL(origin).hostname
     });
     return writeVaultLocalFirst(vault, password, user.sub, [
@@ -643,18 +756,6 @@ async function handle(rawMessage, context) {
     };
   }
 
-  if (message.type === 'SAVE') {
-    const origin = normalizeOrigin(message.origin);
-    const savedItem = upsert(vault, {
-      origin,
-      username: asText(message.username, 'Tên đăng nhập', { required: true, max: MAX_USERNAME_LENGTH }).trim(),
-      password: asText(message.password, 'Mật khẩu', { required: true, max: MAX_PASSWORD_LENGTH }),
-      title: new URL(origin).hostname
-    });
-    return writeVaultLocalFirst(vault, password, user.sub, [
-      { kind: 'credential-upsert', id: savedItem.id }
-    ]);
-  }
   if (message.type === 'DELETE') {
     const id = asId(message.id);
     const target = vault.credentials.find(item => item.id === id);
@@ -1120,7 +1221,7 @@ async function handle(rawMessage, context) {
       syncStatus: {
         state: 'pending',
         direction: 'upload',
-        message: 'Backup đã được khôi phục trên máy và đang tự đồng bộ Drive.'
+        message: 'Backup đã được khôi phục trên máy và đang tự đồng bộ Firestore.'
       },
       queueAutomaticSync: true
     };
@@ -1132,10 +1233,10 @@ async function handle(rawMessage, context) {
   }
   if (message.type === 'RESOLVE_SYNC_CONFLICT') {
     if (!['remote', 'use-cloud'].includes(message.choice)) {
-      throw new Error('Google Drive là nguồn dữ liệu chính; chỉ có thể lấy bản từ Drive.');
+      throw new Error('Cloud Firestore là nguồn dữ liệu chính; chỉ có thể lấy bản từ Firestore.');
     }
     const resolutionPassword = message.password
-      ? asText(message.password, 'Mật khẩu bản Drive', { required: true, max: 4096 })
+      ? asText(message.password, 'Mật khẩu bản Firestore', { required: true, max: 4096 })
       : password;
     const result = await resolveSyncConflict(user.sub, resolutionPassword, 'use-cloud');
     return { status: result.status, action: result.action };
@@ -1158,8 +1259,8 @@ async function handle(rawMessage, context) {
   throw new Error('Hành động không hợp lệ.');
 }
 
-async function handleWithAutomaticDrive(message, context) {
-  if (!AUTO_DRIVE_ACTIONS.has(message.type)) return handle(message, context);
+async function handleWithAutomaticSync(message, context) {
+  if (!AUTO_SYNC_ACTIONS.has(message.type)) return handle(message, context);
 
   const user = await getGoogleUser();
   const password = await getSessionPassword();
@@ -1252,14 +1353,14 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, respond) => {
   try {
     authorized = authorizeMessage(rawMessage, sender, chrome.runtime.id);
   } catch (error) {
-    respond({ ok: false, error: error.message });
-    return false;
+    void getLanguage().then(lang => respond({ ok: false, error: localizeRuntimeText(error.message, lang) }));
+    return true;
   }
 
-  const operation = () => handleWithAutomaticDrive(authorized.message, authorized.context);
+  const operation = () => handleWithAutomaticSync(authorized.message, authorized.context);
   const isForegroundMutation = MUTATING_ACTIONS.has(authorized.message.type);
   if (isForegroundMutation && automaticSyncInFlight) {
-    abortActiveDriveRequests();
+    abortActiveSyncRequests();
   }
   const execution = isForegroundMutation
     ? enqueueMutation(operation)
@@ -1279,6 +1380,8 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, respond) => {
           console.debug('Đồng bộ nền đang chờ thử lại:', error?.message || error);
         }
       }
+      const lang = await getLanguage();
+      if (publicResult.message) publicResult.message = localizeRuntimeText(publicResult.message, lang);
       respond({ ok: true, ...publicResult });
     })
     .catch(async error => {
@@ -1288,9 +1391,10 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, respond) => {
           title: error?.message || 'Không lưu được mã OTP'
         });
       }
+      const lang = await getLanguage();
       respond({
         ok: false,
-        error: error?.message || 'Aegis Vault gặp lỗi không xác định.',
+        error: localizeRuntimeText(error?.message || 'Aegis Vault gặp lỗi không xác định.', lang),
         ...(error?.code ? { code: error.code } : {}),
         ...(error?.syncStatus ? { syncStatus: error.syncStatus } : {})
       });
@@ -1317,13 +1421,13 @@ async function syncPendingLocalMutations(user, password) {
 
     if (['conflict', 'staged'].includes(syncState)) {
       const adopted = await adoptStagedRemoteIfPresent(user.sub, password);
-      if (!adopted) throw new Error('Chưa thể hợp nhất thay đổi local với bản Drive.');
+      if (!adopted) throw new Error('Chưa thể hợp nhất thay đổi local với bản Firestore.');
     } else if (!sync?.ok) {
       throw new Error(sync?.error || sync?.status?.error || 'Chưa thể đồng bộ thay đổi local.');
     }
 
-    const driveVault = await readVault(password, user.sub);
-    const mergedVault = replayPendingMutations(driveVault, localBeforeSync, operations);
+    const remoteVault = await readVault(password, user.sub);
+    const mergedVault = replayPendingMutations(remoteVault, localBeforeSync, operations);
     const write = await writeVault(mergedVault, password, user.sub);
     if (write?.sync?.ok !== false) {
       await clearPendingMutations(user.sub);
@@ -1336,11 +1440,11 @@ async function syncPendingLocalMutations(user, password) {
       throw new Error(
         write.sync.error
         || write.sync.status?.error
-        || 'Chưa thể tải thay đổi local lên Drive.'
+        || 'Chưa thể tải thay đổi local lên Firestore.'
       );
     }
   }
-  throw new Error('Drive đang thay đổi liên tục; dữ liệu vẫn an toàn trên máy và sẽ tự thử lại.');
+  throw new Error('Firestore đang thay đổi liên tục; dữ liệu vẫn an toàn trên máy và sẽ tự thử lại.');
 }
 
 async function runAutomaticSync() {

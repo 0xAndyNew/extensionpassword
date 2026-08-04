@@ -43,7 +43,7 @@ function isPlainObject(value) {
 /**
  * Validate every attacker-controlled field before invoking the deliberately
  * expensive PBKDF2 operation. The upper iteration bound prevents a malicious
- * backup/Drive file from turning unlock into an unbounded CPU task.
+ * backup/Firestore file from turning unlock into an unbounded CPU task.
  */
 export function validateEnvelope(envelope, { maxPayloadBytes = MAX_ENVELOPE_PAYLOAD_BYTES } = {}) {
   if (!isPlainObject(envelope) || envelope.version !== ENVELOPE_VERSION) {

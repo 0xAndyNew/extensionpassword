@@ -2,10 +2,13 @@ import { generateTotp, parseOtpAuthUri, serializeOtpAuthUri } from '../vault/tot
 import qrcode from '../vendor/qrcode-generator.js';
 import '../vendor/jsqr.js';
 import { setSiteIcon } from './favicon.js';
-import { i18nInit, setLanguage, translateDocument, t } from '../i18n.js';
+import { i18nInit, localizeRuntimeText, setLanguage, translateDocument, t } from '../i18n.js';
 
 
 const $ = id => document.getElementById(id);
+let activeLanguage = 'en';
+const l = (english, vietnamese) => activeLanguage === 'vi' ? vietnamese : english;
+const lf = (english, vietnamese, values = {}) => l(english, vietnamese).replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
 const jsQR = globalThis.jsQR;
 let credentials = [];
 let otpAccounts = [];
@@ -32,19 +35,23 @@ async function send(message, { timeoutMs = 0 } = {}) {
   let timeoutId = null;
   try {
     const request = chrome.runtime.sendMessage(message);
-    if (!timeoutMs) return await request;
-    return await Promise.race([
-      request,
-      new Promise(resolve => {
-        timeoutId = setTimeout(() => resolve({
-          ok: false,
-          error: 'Aegis phản hồi chậm. Đang thử kết nối lại…',
-          timeout: true
-        }), timeoutMs);
-      })
-    ]);
+    const response = !timeoutMs
+      ? await request
+      : await Promise.race([
+        request,
+        new Promise(resolve => {
+          timeoutId = setTimeout(() => resolve({
+            ok: false,
+            error: l('Aegis Vault is taking longer than expected. Retrying…', 'Aegis phản hồi chậm. Đang thử kết nối lại…'),
+            timeout: true
+          }), timeoutMs);
+        })
+      ]);
+    if (response?.error) response.error = localizeRuntimeText(response.error, activeLanguage);
+    if (response?.message) response.message = localizeRuntimeText(response.message, activeLanguage);
+    return response;
   } catch (error) {
-    return { ok: false, error: error?.message || 'Không thể kết nối với Aegis Vault.' };
+    return { ok: false, error: error?.message || l('Cannot connect to Aegis Vault.', 'Không thể kết nối với Aegis Vault.') };
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
@@ -61,7 +68,7 @@ async function sendReadWithRetry(message, { attempts = 2, timeoutMs = 4000 } = {
     if (response?.ok) return response;
     if (attempt + 1 < attempts) await wait(120 * (attempt + 1));
   }
-  return response || { ok: false, error: 'Không thể đọc dữ liệu Vault.' };
+  return response || { ok: false, error: l('Cannot read Vault data.', 'Không thể đọc dữ liệu Vault.') };
 }
 
 async function activePageContext() {
@@ -77,6 +84,66 @@ async function activePageContext() {
   } catch {
     return null;
   }
+}
+
+function getSafeWebUrl(value) {
+  try {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const parsed = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function showOpenLinkPopover(anchor, url) {
+  document.querySelector('.open-link-popover')?.remove();
+  const popover = document.createElement('div');
+  popover.className = 'open-link-popover';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', l('Confirm opening website', 'Xác nhận mở website'));
+  const host = new URL(url).host;
+  const heading = document.createElement('strong');
+  heading.textContent = l('Open website?', 'Mở website?');
+  const destination = document.createElement('span');
+  destination.textContent = host;
+  destination.title = url;
+  const actions = document.createElement('div');
+  actions.className = 'open-link-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.textContent = l('Cancel', 'Hủy');
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'primary';
+  open.textContent = l('Open', 'Mở');
+  actions.append(cancel, open);
+  popover.append(heading, destination, actions);
+  document.body.append(popover);
+
+  const rect = anchor.getBoundingClientRect();
+  const width = 210;
+  popover.style.left = `${Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))}px`;
+  popover.style.top = `${Math.max(8, Math.min(rect.bottom - 6, window.innerHeight - popover.offsetHeight - 8))}px`;
+
+  const close = () => {
+    document.removeEventListener('pointerdown', onOutsidePointer);
+    document.removeEventListener('keydown', onKeydown);
+    popover.remove();
+  };
+  const onOutsidePointer = event => { if (!popover.contains(event.target)) close(); };
+  const onKeydown = event => { if (event.key === 'Escape') close(); };
+  cancel.onclick = close;
+  open.onclick = event => {
+    event.stopPropagation();
+    close();
+    void chrome.tabs.create({ url });
+  };
+  popover.onclick = event => event.stopPropagation();
+  setTimeout(() => document.addEventListener('pointerdown', onOutsidePointer), 0);
+  document.addEventListener('keydown', onKeydown);
+  open.focus();
 }
 
 function updateSyncWarningBanner(syncStatus) {
@@ -150,7 +217,7 @@ function updateProfileUI(user) {
   
   $('profileButton').textContent = initials;
   $('pFirstName').textContent = name;
-  $('pEmail').textContent = email || 'Chưa có email';
+  $('pEmail').textContent = email || l('No email', 'Chưa có email');
 }
 
 function authMode(exists, canCreate = true) {
@@ -221,7 +288,7 @@ function renderLoadFailure(container, {
   const retryButton = document.createElement('button');
   retryButton.id = buttonId;
   retryButton.type = 'button';
-  retryButton.textContent = 'Thử lại';
+  retryButton.textContent = l('Try again', 'Thử lại');
   retryButton.onclick = onRetry;
   wrapper.append(detail, retryButton);
   container.replaceChildren(wrapper);
@@ -247,8 +314,8 @@ async function showVault() {
     $('error').textContent = r.error;
     renderLoadFailure($('credentialList'), {
       className: 'vault-load-error',
-      title: 'Chưa tải được dữ liệu Vault',
-      message: r.error || 'Aegis chưa phản hồi.',
+      title: l('Vault data could not be loaded', 'Chưa tải được dữ liệu Vault'),
+      message: r.error || l('Aegis has not responded yet.', 'Aegis chưa phản hồi.'),
       buttonId: 'vaultRetryBtn',
       onRetry: () => { void showVault(); }
     });
@@ -261,7 +328,7 @@ let popupLoginItem = null;
 async function fillCredential(item) {
   const page = await activePageContext();
   if (!page || page.tabId !== currentTabId || page.origin !== currentOrigin) {
-    alert('Trang đang mở đã thay đổi. Hãy đóng rồi mở lại Aegis Vault trên trang cần điền.');
+    alert(l('The open page has changed. Close and reopen Aegis Vault on the page you want to fill.', 'Trang đang mở đã thay đổi. Hãy đóng rồi mở lại Aegis Vault trên trang cần điền.'));
     return;
   }
   const res = await send({ type: 'FILL', id: item.id, origin: page.origin, tabId: page.tabId });
@@ -275,7 +342,7 @@ async function fillCredential(item) {
     });
     window.close();
   } catch {
-    alert('Không thể kết nối với trang này. Hãy tải lại trang rồi thử lại.');
+    alert(l('Could not connect to this page. Reload the page and try again.', 'Không thể kết nối với trang này. Hãy tải lại trang rồi thử lại.'));
   }
 }
 
@@ -340,12 +407,13 @@ async function openPopupLogin(item) {
     $('popupLoginPassword').textContent = visible ? '•'.repeat(Math.max(password.length, 8)) : password;
     $('popupLoginEye').setAttribute('aria-pressed', String(!visible));
   };
-  const copyPopupValue = async (value, label) => {
+  const copyPopupValue = async (value, englishLabel, vietnameseLabel) => {
+    const label = l(englishLabel, vietnameseLabel);
     try {
       await navigator.clipboard.writeText(value || '');
-      showOtpToast(`Đã sao chép ${label}`, 'success');
+      showOtpToast(l(`Copied ${label}`, `Đã sao chép ${label}`), 'success');
     } catch {
-      showOtpToast(`Không thể sao chép ${label}`, 'error');
+      showOtpToast(l(`Could not copy ${label}`, `Không thể sao chép ${label}`), 'error');
     }
   };
   const copyPopupOtp = async () => {
@@ -353,10 +421,10 @@ async function openPopupLogin(item) {
       showOtpToast('OTP không hợp lệ — hãy kiểm tra lại', 'error');
       return;
     }
-    await copyPopupValue($('popupLoginOtp').textContent, 'mã OTP');
+    await copyPopupValue($('popupLoginOtp').textContent, 'OTP code', 'mã OTP');
   };
-  $('popupCopyUsername').onclick = () => { void copyPopupValue(detailedItem.username, 'tên đăng nhập'); };
-  $('popupCopyPassword').onclick = () => { void copyPopupValue(password, 'mật khẩu'); };
+  $('popupCopyUsername').onclick = () => { void copyPopupValue(detailedItem.username, 'username', 'tên đăng nhập'); };
+  $('popupCopyPassword').onclick = () => { void copyPopupValue(password, 'password', 'mật khẩu'); };
   $('popupLoginOtpRow').onclick = () => { void copyPopupOtp(); };
   $('popupLoginModal').classList.remove('hidden');
 }
@@ -391,7 +459,7 @@ function render() {
   $('identityTabContent').classList.add('hidden'); $('generatorTabContent').classList.add('hidden'); $('otpTabContent').classList.add('hidden'); $('subTabs').classList.remove('hidden'); stopOtpTimer();
 
   if (!list.length) {
-    container.innerHTML = `<div style="padding:24px;text-align:center;color:#94a3b8;font-size:12px">Không có tài khoản nào được tìm thấy.</div>`;
+    container.innerHTML = `<div style="padding:24px;text-align:center;color:#94a3b8;font-size:12px">${l('No accounts found.', 'Không có tài khoản nào được tìm thấy.')}</div>`;
     return;
   }
 
@@ -416,8 +484,8 @@ function render() {
     
     const menuBtn = document.createElement('button');
     menuBtn.className = 'list-menu-btn';
-    menuBtn.innerHTML = '⋮';
-    menuBtn.title = 'Chi tiết / Quản lý';
+    menuBtn.textContent = '⋮';
+    menuBtn.title = l('Details / Manage', 'Chi tiết / Quản lý');
     menuBtn.onclick = (e) => {
       e.stopPropagation();
       chrome.runtime.openOptionsPage();
@@ -426,6 +494,13 @@ function render() {
     el.append(icon, info, menuBtn);
     
     el.onclick = () => { void openPopupLogin(item); };
+    el.oncontextmenu = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const url = getSafeWebUrl(item.url || item.origins?.[0]);
+      if (url) showOpenLinkPopover(el, url);
+    };
+    el.title = l('Click to view details · Right-click to open website', 'Nhấp để xem thông tin · Nhấp chuột phải để mở website');
     
     return el;
   }));
@@ -735,7 +810,10 @@ async function renderOtp() {
   const renderGeneration = ++otpRenderGeneration;
   const q = $('searchInput').value.toLowerCase();
   const list = otpAccounts.filter(item => `${item.issuer} ${item.account}`.toLowerCase().includes(q));
-  if (!list.length) { $('otpList').innerHTML = '<div style="padding:28px;text-align:center;color:#86868b;font-size:12px">Chưa có mã OTP. Chọn “Thêm mã” để bắt đầu.</div>'; return; }
+  if (!list.length) {
+    $('otpList').innerHTML = `<div style="padding:28px;text-align:center;color:#86868b;font-size:12px">${l('No OTP codes yet. Select Add code to get started.', 'Chưa có mã OTP. Chọn “Thêm mã” để bắt đầu.')}</div>`;
+    return;
+  }
   const nodes = await Promise.all(list.map(async item => {
     const card = document.createElement('article'); card.className = 'otp-card'; card.draggable = true; card.dataset.id = item.id;
     if (recentlySavedOtp?.id === item.id) card.classList.add('just-saved');
@@ -1262,6 +1340,7 @@ if (advancedSettingsButton) advancedSettingsButton.onclick = async () => { await
 window.addEventListener('unload',()=>{stopOtpTimer();});
 
 function updateLangUI(lang) {
+  activeLanguage = lang === 'vi' ? 'vi' : 'en';
   const langBtn = $('langButton');
   if (langBtn) langBtn.textContent = lang === 'en' ? '🇬🇧' : '🇻🇳';
   const viBtn = $('langViBtn');
@@ -1275,6 +1354,7 @@ function updateLangUI(lang) {
     const exists = authBtn.dataset.exists === 'true';
     authMode(exists, !authBtn.disabled);
   }
+  if (!$('vaultView').classList.contains('hidden')) render();
 }
 
 function initLanguageUI() {
@@ -1336,7 +1416,7 @@ async function bootPopup() {
     $('authView').classList.add('hidden');
     $('vaultView').classList.add('hidden');
     $('googleView').classList.remove('hidden');
-    $('googleError').textContent = error?.message || 'Không mở được Aegis Vault. Hãy đóng rồi mở lại extension.';
+    $('googleError').textContent = error?.message || l('Aegis Vault could not open. Close and reopen the extension.', 'Không mở được Aegis Vault. Hãy đóng rồi mở lại extension.');
   } finally {
     $('bootView').classList.add('hidden');
   }

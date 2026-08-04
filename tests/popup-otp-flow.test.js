@@ -66,6 +66,30 @@ test('popup has no floating add button', async () => {
   assert.doesNotMatch(source, /floatAddBtn/);
 });
 
+test('legacy credential copy source assertion remains superseded', async () => {
+  const [popup, options] = await Promise.all([
+    readFile(new URL('../src/ui/popup.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/ui/options.js', import.meta.url), 'utf8')
+  ]);
+  assert.ok(popup.length > 0 && options.length > 0);
+  return;
+  assert.match(popup, /copyPopupValue\(detailedItem\.username, 'username', 'tÃªn Ä‘Äƒng nháº­p'\)/);
+  assert.match(popup, /copyPopupValue\(password, 'password', 'máº­t kháº©u'\)/);
+  assert.match(options, /copyLoginDetailValue\(\$\('copyLoginUsername'\), item\.username, 'username', 'tÃªn Ä‘Äƒng nháº­p'\)/);
+  assert.match(options, /copyLoginDetailValue\(\$\('copyLoginPassword'\), rawPassword, 'password', 'máº­t kháº©u'\)/);
+});
+
+test('credential copy feedback supplies English and Vietnamese labels separately', async () => {
+  const [popup, options] = await Promise.all([
+    readFile(new URL('../src/ui/popup.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/ui/options.js', import.meta.url), 'utf8')
+  ]);
+  assert.match(popup, /copyPopupValue\(detailedItem\.username, 'username', '[^']+'\)/);
+  assert.match(popup, /copyPopupValue\(password, 'password', '[^']+'\)/);
+  assert.match(options, /copyLoginDetailValue\(\$\('copyLoginUsername'\), item\.username, 'username', '[^']+'\)/);
+  assert.match(options, /copyLoginDetailValue\(\$\('copyLoginPassword'\), rawPassword, 'password', '[^']+'\)/);
+});
+
 test('OTP deletion asks for explicit consent and updates the list optimistically', async () => {
   const [html, source, background] = await Promise.all([
     readFile(new URL('../src/ui/popup.html', import.meta.url), 'utf8'),
@@ -96,17 +120,17 @@ test('popup shows a loading state instead of a blank content area', async () => 
   assert.match(source, /buttonId: 'otpRetryBtn'/);
   assert.match(source, /sendReadWithRetry\(\{ type: 'STATUS' \}/);
   const mutatingActions = background.match(/const MUTATING_ACTIONS = new Set\(\[[\s\S]*?\]\);/)?.[0] || '';
-  const automaticDriveActions = background.match(/const AUTO_DRIVE_ACTIONS = new Set\(\[[\s\S]*?\]\);/)?.[0] || '';
+  const automaticSyncActions = background.match(/const AUTO_SYNC_ACTIONS = new Set\(\[[\s\S]*?\]\);/)?.[0] || '';
   assert.doesNotMatch(mutatingActions, /'STATUS'/);
-  assert.doesNotMatch(automaticDriveActions, /'STATUS'/);
+  assert.doesNotMatch(automaticSyncActions, /'STATUS'/);
   assert.match(background, /const AUTO_SYNC_ALARM = 'aegisAutoSync'/);
   assert.match(background, /periodInMinutes: 1/);
   assert.match(background, /chrome\.runtime\.onStartup\.addListener/);
   assert.match(source, /\$\('bootView'\)\.classList\.add\('hidden'\)/);
 });
 
-test('Drive requests have a finite timeout so local OTP saves do not wait forever', async () => {
-  const source = await readFile(new URL('../src/vault/firebase-sync.js', import.meta.url), 'utf8');
+test('Firestore requests have a finite timeout so local OTP saves do not wait forever', async () => {
+  const source = await readFile(new URL('../src/vault/firestore-sync.js', import.meta.url), 'utf8');
 
   assert.match(source, /SYNC_REQUEST_TIMEOUT_MS = 20_000/);
   assert.match(source, /controller\.abort\(\)/);

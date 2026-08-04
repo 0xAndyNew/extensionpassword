@@ -21,15 +21,6 @@ Copy-Item (Join-Path $projectRoot 'manifest.json') $stagingRoot
 Copy-Item (Join-Path $projectRoot 'src') $stagingRoot -Recurse
 Copy-Item (Join-Path $projectRoot 'INSTALL.md') $stagingRoot
 
-# Strip "key" property from manifest.json for Chrome Web Store submission compliance
-$manifestPath = Join-Path $stagingRoot 'manifest.json'
-$manifestContent = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($manifestContent.PSObject.Properties.Item('key')) {
-    $manifestContent.PSObject.Properties.Remove('key')
-    $manifestJsonText = $manifestContent | ConvertTo-Json -Depth 10
-    [System.IO.File]::WriteAllText($manifestPath, $manifestJsonText, [System.Text.Encoding]::UTF8)
-}
-
 Get-ChildItem $stagingRoot -Recurse -File | Where-Object {
   $_.Extension -in @('.pem', '.key')
 } | ForEach-Object {

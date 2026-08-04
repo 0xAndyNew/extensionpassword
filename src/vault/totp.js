@@ -178,7 +178,7 @@ export function reorderOtpAccounts(accounts, requestedIds) {
     if (itemById.has(id)) requestedExistingIds.push(id);
   }
   if (accounts.length && !requestedExistingIds.length) {
-    throw new Error('Danh sách OTP đã thay đổi trên Drive. Hãy thử kéo lại.');
+    throw new Error('Danh sách OTP đã thay đổi trên Firestore. Hãy thử kéo lại.');
   }
 
   const requestedSet = new Set(requestedExistingIds);

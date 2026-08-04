@@ -15,12 +15,12 @@ $newVersion = "$major.$minor.$patch"
 # Update package.json
 $pkg.version = $newVersion
 $pkgJsonText = $pkg | ConvertTo-Json -Depth 10
-[System.IO.File]::WriteAllText($pkgPath, $pkgJsonText, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($pkgPath, $pkgJsonText, (New-Object System.Text.UTF8Encoding($false)))
 
 # Update manifest.json
 $manifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $manifest.version = $newVersion
 $manifestJsonText = $manifest | ConvertTo-Json -Depth 10
-[System.IO.File]::WriteAllText($manifestPath, $manifestJsonText, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($manifestPath, $manifestJsonText, (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host "Version bumped: $oldVersion -> $newVersion in package.json & manifest.json"

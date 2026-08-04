@@ -5,8 +5,8 @@ import {
   validateEnvelope,
   MAX_ENVELOPE_PAYLOAD_BYTES
 } from './crypto.js';
-import { findVaultFiles, readVaultFileSnapshot, writeVaultFile } from './firebase-sync.js';
-import { ensureTrustedStorageAccess, withFirebaseIdToken as withGoogleAccessToken } from '../auth/firebase-auth.js';
+import { findVaultDocuments, readVaultDocumentSnapshot, writeVaultDocument } from './firestore-sync.js';
+import { ensureTrustedStorageAccess, withFirebaseIdToken } from '../auth/firebase-auth.js';
 import { scorePassword } from './password-security.js';
 import { normalizeSecret } from './totp.js';
 
@@ -23,7 +23,7 @@ const STAGE_VERSION = 1;
 const PENDING_UPLOAD_VERSION = 1;
 export const MIN_MASTER_PASSWORD_LENGTH = 6;
 
-let driveUploadTail = Promise.resolve();
+let firestoreUploadTail = Promise.resolve();
 let unlockedVaultCache = null;
 let vaultReadInFlight = null;
 const vaultCacheStats = { hits: 0, decryptions: 0 };
@@ -691,23 +691,23 @@ export async function getSyncStatus(googleSub) {
   return status || { state: 'idle', googleSub, error: null };
 }
 
-function serializeDriveUpload(operation) {
-  const run = driveUploadTail.then(operation, operation);
-  driveUploadTail = run.catch(() => undefined);
+function serializeFirestoreUpload(operation) {
+  const run = firestoreUploadTail.then(operation, operation);
+  firestoreUploadTail = run.catch(() => undefined);
   return run;
 }
 
-function driveFilename(googleSub) {
+function firestoreDocumentName(googleSub) {
   return `aegis_vault_${googleSub}.json`;
 }
 
 async function downloadRemoteEnvelope(googleSub) {
-  return withGoogleAccessToken(async token => {
-    const files = await findVaultFiles(token, driveFilename(googleSub));
+  return withFirebaseIdToken(async token => {
+    const files = await findVaultDocuments(token, firestoreDocumentName(googleSub));
     if (files.length > 1) {
       const error = makeError(
-        'Phát hiện nhiều tệp vault cùng tên trên Google Drive; đã dừng để bảo toàn tất cả bản.',
-        'DRIVE_DUPLICATE_VAULT_FILES'
+        'Phát hiện nhiều tệp vault cùng tên trên Cloud Firestore; đã dừng để bảo toàn tất cả bản.',
+        'FIRESTORE_DUPLICATE_VAULT_DOCUMENTS'
       );
       error.files = files.map(file => ({
         id: file.id,
@@ -718,24 +718,31 @@ async function downloadRemoteEnvelope(googleSub) {
     }
     const file = files[0] || null;
     if (!file) return { file: null, envelope: null };
-    const snapshot = await readVaultFileSnapshot(token, file.id);
+    const snapshot = await readVaultDocumentSnapshot(token, file.id);
     validateEnvelope(snapshot.envelope);
     return {
-      file: { ...file, etag: snapshot.etag },
+      file: {
+        ...file,
+        etag: snapshot.etag,
+        commitId: snapshot.commitId || file.commitId || null,
+        chunkCount: snapshot.chunkCount ?? file.chunkCount ?? null
+      },
       envelope: snapshot.envelope
     };
   });
 }
 
 async function uploadRemoteEnvelope(googleSub, envelope, remote) {
-  return withGoogleAccessToken(token => writeVaultFile(
+  return withFirebaseIdToken(token => writeVaultDocument(
     token,
-    driveFilename(googleSub),
+    firestoreDocumentName(googleSub),
     envelope,
     remote?.file
       ? {
           file: remote.file,
-          expectedEtag: remote.file.etag
+          expectedEtag: remote.file.etag,
+          previousCommitId: remote.file.commitId,
+          previousChunkCount: remote.file.chunkCount
         }
       : {
           file: null,
@@ -855,7 +862,7 @@ async function etagRefreshFailure(googleSub, error, direction = 'upload') {
     direction,
     reason: 'etag-refresh-failed',
     retryable: true,
-    error: error?.message || 'Không thể đọc lại Drive sau khi ETag thay đổi.'
+    error: error?.message || 'Không thể đọc lại Firestore sau khi ETag thay đổi.'
   });
   return {
     ok: false,
@@ -890,18 +897,18 @@ async function decryptRemoteForSync(remote, passwords, googleSub) {
       lastError = error;
     }
   }
-  throw lastError || makeError('Cần mật khẩu chính để xác thực vault trên Drive.', 'SYNC_PASSWORD_REQUIRED');
+  throw lastError || makeError('Cần mật khẩu chính để xác thực vault trên Firestore.', 'SYNC_PASSWORD_REQUIRED');
 }
 
 async function uploadWithPrecondition(googleSub, envelope, localData, remote) {
   if (remote?.file && !remote.file.etag) {
-    throw makeError('Google Drive không trả về ETag; đã dừng để tránh ghi đè mù.', 'DRIVE_ETAG_MISSING');
+    throw makeError('Cloud Firestore không trả về ETag; đã dừng để tránh ghi đè mù.', 'FIRESTORE_VERSION_MISSING');
   }
   await persistPendingUpload(googleSub, localData, remote);
-  return serializeDriveUpload(() => uploadRemoteEnvelope(googleSub, envelope, remote));
+  return serializeFirestoreUpload(() => uploadRemoteEnvelope(googleSub, envelope, remote));
 }
 
-export async function syncToGDrive(
+export async function syncToFirestore(
   googleSub,
   envelope,
   {
@@ -929,11 +936,11 @@ export async function syncToGDrive(
         googleSub,
         { envelope: staged.envelope, file: staged.file },
         staged.reason || 'conflict-pending',
-        'Cần xử lý bản Drive đang chờ trước khi tải lên.'
+        'Cần xử lý bản Firestore đang chờ trước khi tải lên.'
       );
     }
 
-    // Persist the first authenticated base before re-reading Drive. This is
+    // Persist the first authenticated base before re-reading Firestore. This is
     // essential during password rotation: a crash/network failure after the
     // local re-encryption remains retryable without persisting the old password.
     if (preflight) await persistPendingUpload(googleSub, localData, preflight);
@@ -954,7 +961,7 @@ export async function syncToGDrive(
             googleSub,
             remote,
             'remote-password-mismatch',
-            'Bản Drive không mở được bằng mật khẩu hiện tại; đã giữ nguyên cả hai bản.'
+            'Bản Firestore không mở được bằng mật khẩu hiện tại; đã giữ nguyên cả hai bản.'
           );
         }
       }
@@ -1025,14 +1032,14 @@ export async function syncToGDrive(
     return { ok: true, action: 'uploaded', status, file };
   } catch (error) {
     if (
-      error?.code === 'DRIVE_DUPLICATE_VAULT_FILES'
+      error?.code === 'FIRESTORE_DUPLICATE_VAULT_DOCUMENTS'
       || error?.details?.reason === 'duplicate-vault-files'
     ) {
       return conflictResult(
         googleSub,
         null,
         'duplicate-remote-files',
-        'Có nhiều tệp vault cùng tên trên Drive; đã dừng và không thay đổi tệp nào.'
+        'Có nhiều tệp vault cùng tên trên Firestore; đã dừng và không thay đổi tệp nào.'
       );
     }
     if (error?.status === 412 || error?.code === 412) {
@@ -1040,12 +1047,12 @@ export async function syncToGDrive(
       try {
         latest = await downloadRemoteEnvelope(googleSub);
       } catch (refreshError) {
-        if (refreshError?.code === 'DRIVE_DUPLICATE_VAULT_FILES') {
+        if (refreshError?.code === 'FIRESTORE_DUPLICATE_VAULT_DOCUMENTS') {
           return conflictResult(
             googleSub,
             null,
             'duplicate-remote-files',
-            'Có nhiều tệp vault cùng tên trên Drive; đã dừng và không thay đổi tệp nào.'
+            'Có nhiều tệp vault cùng tên trên Firestore; đã dừng và không thay đổi tệp nào.'
           );
         }
         return etagRefreshFailure(googleSub, refreshError, 'upload');
@@ -1054,7 +1061,7 @@ export async function syncToGDrive(
         googleSub,
         latest,
         'etag-mismatch',
-        'Bản Drive đã thay đổi trong lúc tải lên; đã dừng và giữ nguyên cả hai bản.'
+        'Bản Firestore đã thay đổi trong lúc tải lên; đã dừng và giữ nguyên cả hai bản.'
       );
     }
     const status = await updateSyncStatus(googleSub, {
@@ -1062,14 +1069,14 @@ export async function syncToGDrive(
       direction: 'upload',
       reason: 'upload-pending',
       retryable: Boolean(await getPendingUpload(googleSub)),
-      error: error?.message || 'Đồng bộ Google Drive thất bại.'
+      error: error?.message || 'Đồng bộ Cloud Firestore thất bại.'
     });
     if (throwOnError) throw error;
     return { ok: false, status, error: status.error };
   }
 }
 
-export async function syncFromGDrive(googleSub, password, { preferDrive = false } = {}) {
+export async function syncFromFirestore(googleSub, password, { preferRemote = false } = {}) {
   requireGoogleSub(googleSub);
   await ensureTrustedStorageAccess();
   await updateSyncStatus(googleSub, { state: 'syncing', direction: 'download', error: null });
@@ -1077,12 +1084,12 @@ export async function syncFromGDrive(googleSub, password, { preferDrive = false 
   try {
     remote = await downloadRemoteEnvelope(googleSub);
   } catch (error) {
-    const duplicate = error?.code === 'DRIVE_DUPLICATE_VAULT_FILES';
+    const duplicate = error?.code === 'FIRESTORE_DUPLICATE_VAULT_DOCUMENTS';
     const status = await updateSyncStatus(googleSub, {
       state: 'error',
       direction: 'download',
       reason: duplicate ? 'duplicate-remote-files' : 'download-error',
-      error: error?.message || 'Không thể kiểm tra Google Drive.'
+      error: error?.message || 'Không thể kiểm tra Cloud Firestore.'
     });
     error.syncStatus = status;
     throw error;
@@ -1097,7 +1104,7 @@ export async function syncFromGDrive(googleSub, password, { preferDrive = false 
           googleSub
         );
         const pending = await getPendingUpload(googleSub);
-        const upload = await syncToGDrive(googleSub, local.envelope, {
+        const upload = await syncToFirestore(googleSub, local.envelope, {
           password,
           allowStaged: Boolean(pending)
         });
@@ -1167,7 +1174,7 @@ export async function syncFromGDrive(googleSub, password, { preferDrive = false 
     if (localSnapshot) {
       const pending = await getPendingUpload(googleSub);
       if (canUsePendingProof(pending, localSnapshot.data, remote)) {
-        const retry = await syncToGDrive(googleSub, localSnapshot.envelope, {
+        const retry = await syncToFirestore(googleSub, localSnapshot.envelope, {
           password,
           allowStaged: true
         });
@@ -1181,7 +1188,7 @@ export async function syncFromGDrive(googleSub, password, { preferDrive = false 
         googleSub,
         remote,
         'remote-password-mismatch',
-        'Bản local mở được nhưng bản Drive không mở được bằng mật khẩu này; đã chặn tải lên.',
+        'Bản local mở được nhưng bản Firestore không mở được bằng mật khẩu này; đã chặn tải lên.',
         'download'
       );
     }
@@ -1190,7 +1197,7 @@ export async function syncFromGDrive(googleSub, password, { preferDrive = false 
       direction: 'download',
       reason: 'password-mismatch',
       remoteFileId: remote.file.id,
-      error: remotePasswordError?.message || 'Không thể mở vault trên Drive.'
+      error: remotePasswordError?.message || 'Không thể mở vault trên Firestore.'
     });
     const error = remotePasswordError || localError || makeError(status.error, 'VAULT_PASSWORD_MISMATCH');
     error.syncStatus = status;
@@ -1198,12 +1205,12 @@ export async function syncFromGDrive(googleSub, password, { preferDrive = false 
   }
 
   if (localError) {
-    if (preferDrive) return adoptStagedRemote(googleSub, password);
+    if (preferRemote) return adoptStagedRemote(googleSub, password);
     return conflictResult(
       googleSub,
       remote,
       'local-password-mismatch',
-      'Bản Drive mở được nhưng bản local không mở được bằng mật khẩu này; cần chọn bản muốn giữ.',
+      'Bản Firestore mở được nhưng bản local không mở được bằng mật khẩu này; cần chọn bản muốn giữ.',
       'download'
     );
   }
@@ -1225,7 +1232,7 @@ export async function syncFromGDrive(googleSub, password, { preferDrive = false 
     { data: remoteData, envelope: remote.envelope },
     localSnapshot
   );
-  if (preferDrive && comparison !== 0) {
+  if (preferRemote && comparison !== 0) {
     return adoptStagedRemote(googleSub, password);
   }
   if (comparison === null) {
@@ -1243,7 +1250,7 @@ export async function syncFromGDrive(googleSub, password, { preferDrive = false 
     setVaultMemoryCache(key, password, finalData, finalEnvelope);
     await clearSyncWork(googleSub);
 
-    // Upload the merged version back to Drive so both are in sync
+    // Upload the merged version back to Firestore so both are in sync
     if (finalEnvelope !== remote.envelope) {
       await uploadWithPrecondition(googleSub, finalEnvelope, finalData, remote).catch(() => null);
     }
@@ -1269,7 +1276,7 @@ export async function syncFromGDrive(googleSub, password, { preferDrive = false 
     return { ok: true, remoteFound: true, action: 'downloaded', status };
   }
   if (comparison < 0) {
-    const upload = await syncToGDrive(googleSub, localSnapshot.envelope, {
+    const upload = await syncToFirestore(googleSub, localSnapshot.envelope, {
       password,
       allowStaged: true
     });
@@ -1299,7 +1306,7 @@ async function preflightPasswordRotation(googleSub, localSnapshot, currentPasswo
       googleSub,
       { envelope: staged.envelope, file: staged.file },
       staged.reason || 'conflict-pending',
-      'Cần xử lý bản Drive đang chờ trước khi đổi mật khẩu.'
+      'Cần xử lý bản Firestore đang chờ trước khi đổi mật khẩu.'
     );
     const error = makeError(result.status.error, 'SYNC_CONFLICT_PENDING');
     error.syncResult = result;
@@ -1310,7 +1317,7 @@ async function preflightPasswordRotation(googleSub, localSnapshot, currentPasswo
   try {
     remote = await downloadRemoteEnvelope(googleSub);
   } catch (error) {
-    if (error?.code === 'DRIVE_DUPLICATE_VAULT_FILES') {
+    if (error?.code === 'FIRESTORE_DUPLICATE_VAULT_DOCUMENTS') {
       error.syncStatus = await updateSyncStatus(googleSub, {
         state: 'error',
         direction: 'upload',
@@ -1324,8 +1331,8 @@ async function preflightPasswordRotation(googleSub, localSnapshot, currentPasswo
   if (!remote.envelope) return { ...remote, data: null };
   if (!remote.file?.etag) {
     const error = makeError(
-      'Google Drive không trả về ETag; đã dừng đổi mật khẩu để tránh mất đường retry an toàn.',
-      'DRIVE_ETAG_MISSING'
+      'Cloud Firestore không trả về ETag; đã dừng đổi mật khẩu để tránh mất đường retry an toàn.',
+      'FIRESTORE_VERSION_MISSING'
     );
     error.syncStatus = await updateSyncStatus(googleSub, {
       state: 'error',
@@ -1345,7 +1352,7 @@ async function preflightPasswordRotation(googleSub, localSnapshot, currentPasswo
       googleSub,
       remote,
       'remote-password-mismatch',
-      'Bản Drive không mở được bằng mật khẩu hiện tại; đã dừng đổi mật khẩu.'
+      'Bản Firestore không mở được bằng mật khẩu hiện tại; đã dừng đổi mật khẩu.'
     );
     const error = makeError(result.status.error, 'REMOTE_PASSWORD_MISMATCH');
     error.syncResult = result;
@@ -1361,7 +1368,7 @@ async function preflightPasswordRotation(googleSub, localSnapshot, currentPasswo
       googleSub,
       remote,
       comparison === -1 ? 'remote-newer' : 'divergent-lineage',
-      'Bản Drive không còn là tổ tiên của bản local; đã dừng đổi mật khẩu.'
+      'Bản Firestore không còn là tổ tiên của bản local; đã dừng đổi mật khẩu.'
     );
     const error = makeError(result.status.error, 'SYNC_CONFLICT_PENDING');
     error.syncResult = result;
@@ -1385,7 +1392,7 @@ async function writeVaultInternal(data, password, googleSub, { previousPassword 
 
   if (googleSub && upload && await getStagedRemote(googleSub)) {
     throw makeError(
-      'Cần xử lý bản Drive đang chờ trước khi thay đổi vault.',
+      'Cần xử lý bản Firestore đang chờ trước khi thay đổi vault.',
       'SYNC_CONFLICT_PENDING'
     );
   }
@@ -1408,7 +1415,7 @@ async function writeVaultInternal(data, password, googleSub, { previousPassword 
           direction: 'upload',
           reason: 'rotation-preflight-failed',
           retryable: true,
-          error: error?.message || 'Không thể kiểm tra Drive trước khi đổi mật khẩu.'
+          error: error?.message || 'Không thể kiểm tra Firestore trước khi đổi mật khẩu.'
         });
       }
       throw error;
@@ -1422,7 +1429,7 @@ async function writeVaultInternal(data, password, googleSub, { previousPassword 
   setVaultMemoryCache(key, password, data, envelope);
 
   const sync = googleSub && upload
-    ? await syncToGDrive(googleSub, envelope, {
+    ? await syncToFirestore(googleSub, envelope, {
         password,
         remotePassword: previousPassword,
         preflight
@@ -1443,13 +1450,13 @@ export async function createVault(password, user) {
   validateNewMasterPassword(password);
   if (!user?.sub || !user?.email) throw new Error('Tài khoản Google không hợp lệ.');
 
-  // Never create an empty vault until Drive has been checked successfully.
+  // Never create an empty vault until Firestore has been checked successfully.
   // This closes the old "download failed -> empty vault -> overwrite backup"
   // failure mode.
   if (await hasVault(user.sub)) throw new Error('Vault đã tồn tại. Hãy mở khóa thay vì tạo mới.');
-  const remoteCheck = await syncFromGDrive(user.sub);
+  const remoteCheck = await syncFromFirestore(user.sub);
   if (remoteCheck.remoteFound || await hasVault(user.sub)) {
-    throw new Error('Đã tìm thấy vault trên Google Drive. Hãy mở khóa vault hiện có.');
+    throw new Error('Đã tìm thấy vault trên Cloud Firestore. Hãy mở khóa vault hiện có.');
   }
 
   const data = {
@@ -1473,19 +1480,19 @@ export async function unlockVault(password, user) {
   let syncError = null;
   let syncResult = null;
   try {
-    syncResult = await syncFromGDrive(user.sub, password, { preferDrive: true });
+    syncResult = await syncFromFirestore(user.sub, password, { preferRemote: true });
   } catch (error) {
-    // Offline/Drive failures must not make a valid local vault unavailable.
+    // Offline/Firestore failures must not make a valid local vault unavailable.
     syncError = error;
   }
   if (syncResult?.status?.state === 'conflict') {
     const error = makeError(
       syncResult.reason === 'remote-password-mismatch'
-        ? 'Mật khẩu này chỉ mở được bản trên máy. Hãy nhập mật khẩu của Vault trên Drive.'
-        : 'Chưa thể tự lấy Vault từ Drive. Hãy thử mở khóa lại.',
+        ? 'Mật khẩu này chỉ mở được bản trên máy. Hãy nhập mật khẩu của Vault trên Firestore.'
+        : 'Chưa thể tự lấy Vault từ Firestore. Hãy thử mở khóa lại.',
       syncResult.reason === 'remote-password-mismatch'
-        ? 'DRIVE_PASSWORD_MISMATCH'
-        : 'DRIVE_AUTO_RESTORE_PENDING'
+        ? 'REMOTE_PASSWORD_MISMATCH'
+        : 'REMOTE_AUTO_RESTORE_PENDING'
     );
     error.syncStatus = syncResult.status;
     throw error;
@@ -1729,19 +1736,19 @@ export async function manualSyncVault(password, userOrGoogleSub) {
   requireGoogleSub(googleSub);
   const local = await decryptStoredVault(vaultStorageKey(googleSub), password, googleSub);
   if (await getPendingUpload(googleSub)) {
-    return syncToGDrive(googleSub, local.envelope, {
+    return syncToFirestore(googleSub, local.envelope, {
       password,
       allowStaged: true
     });
   }
-  return syncFromGDrive(googleSub, password);
+  return syncFromFirestore(googleSub, password);
 }
 
 async function downloadRemoteForResolution(googleSub, direction) {
   try {
     return await downloadRemoteEnvelope(googleSub);
   } catch (error) {
-    if (error?.code === 'DRIVE_DUPLICATE_VAULT_FILES') {
+    if (error?.code === 'FIRESTORE_DUPLICATE_VAULT_DOCUMENTS') {
       error.syncStatus = await updateSyncStatus(googleSub, {
         state: 'error',
         direction,
@@ -1764,7 +1771,7 @@ function stagedRemoteMatchesLatest(staged, latest) {
 }
 
 /**
- * Adopt the staged Drive copy even when no unlock session exists yet. The
+ * Adopt the staged Firestore copy even when no unlock session exists yet. The
  * previous encrypted local envelope is retained under a separate recovery key
  * and is never exposed as plaintext.
  */
@@ -1779,10 +1786,10 @@ export async function adoptStagedRemote(googleSub, password) {
       googleSub,
       latest,
       'etag-mismatch',
-      'Bản Drive đã đổi sau khi hiển thị xung đột; vui lòng xác nhận lại.',
+      'Bản Firestore đã đổi sau khi hiển thị xung đột; vui lòng xác nhận lại.',
       'download'
     );
-    const error = makeError(result.status.error, 'DRIVE_CHANGED_DURING_RESOLUTION');
+    const error = makeError(result.status.error, 'REMOTE_CHANGED_DURING_RESOLUTION');
     error.syncStatus = result.status;
     throw error;
   }
@@ -1862,14 +1869,14 @@ export async function adoptStagedRemoteIfPresent(googleSub, password) {
 }
 
 /**
- * Resolve a divergent-lineage conflict by adopting the authenticated Drive
- * copy. Drive is the only source of truth; a device copy must never overwrite
+ * Resolve a divergent-lineage conflict by adopting the authenticated Firestore
+ * copy. Firestore is the only source of truth; a device copy must never overwrite
  * it from the conflict-resolution path.
  */
 export async function resolveSyncConflict(googleSub, password, choice) {
   requireGoogleSub(googleSub);
   if (choice !== 'use-cloud') {
-    throw new Error('Google Drive là nguồn dữ liệu chính; không thể dùng bản trên máy để ghi đè Drive.');
+    throw new Error('Cloud Firestore là nguồn dữ liệu chính; không thể dùng bản trên máy để ghi đè Firestore.');
   }
   return adoptStagedRemote(googleSub, password);
 }

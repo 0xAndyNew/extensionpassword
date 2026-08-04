@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
 import { createEnvelope, openEnvelope } from '../src/vault/crypto.js';
 import {
-  syncToGDrive,
-  syncFromGDrive,
+  syncToFirestore,
+  syncFromFirestore,
   adoptStagedRemote,
   resolveSyncConflict,
   exportPreCloudRecovery,
@@ -96,6 +96,7 @@ function mockEnvironment(t, drive) {
   const session = memoryStorageArea();
   let patchCount = 0;
   let createCount = 0;
+  drive.chunks ||= new Map();
   globalThis.chrome = {
     storage: { local, sync, session },
     runtime: {
@@ -107,8 +108,7 @@ function mockEnvironment(t, drive) {
             scopes: [
               'openid',
               'email',
-              'profile',
-              'https://www.googleapis.com/auth/drive.appdata'
+              'profile'
             ]
           }
         };
@@ -122,7 +122,7 @@ function mockEnvironment(t, drive) {
         const request = new URL(url);
         const redirectUri = request.searchParams.get('redirect_uri');
         const state = request.searchParams.get('state');
-        return `${redirectUri}#access_token=test-access-token-for-drive&expires_in=3600&state=${state}`;
+        return `${redirectUri}#access_token=test-firebase-id-token&expires_in=3600&state=${state}`;
       },
       async removeCachedAuthToken() {},
       async clearAllCachedAuthTokens() {}
@@ -130,8 +130,23 @@ function mockEnvironment(t, drive) {
   };
   globalThis.fetch = async (url, options = {}) => {
     const href = String(url);
-    if (href.includes('openidconnect.googleapis.com') || href.includes('identitytoolkit.googleapis.com')) return response(user);
-    if ((!options.method || options.method === 'GET') && (href.includes('firestore.googleapis.com') || href.includes('/drive/v3/files?') || href.includes('?alt=media'))) {
+    const requestUrl = new URL(href);
+    const chunkMatch = decodeURIComponent(requestUrl.pathname).match(/\/vault\/snapshot\/chunks\/([^/]+)$/);
+    if (href.includes('identitytoolkit.googleapis.com')) return response(user);
+    if ((!options.method || options.method === 'GET') && chunkMatch) {
+      const chunk = drive.chunks.get(chunkMatch[1]);
+      if (!chunk) return response({ message: 'Not found' }, { status: 404 });
+      return response({
+        name: `projects/test/databases/(default)/documents/users/${googleSub}/vault/snapshot/chunks/${chunkMatch[1]}`,
+        fields: {
+          format: { stringValue: 'aegis-firestore-chunks-v1' },
+          commitId: { stringValue: chunk.commitId },
+          index: { integerValue: String(chunk.index) },
+          data: { stringValue: chunk.data }
+        }
+      });
+    }
+    if ((!options.method || options.method === 'GET') && href.includes('firestore.googleapis.com')) {
       if (typeof drive.onMedia === 'function') {
         const custom = await drive.onMedia({ drive });
         if (custom) return custom;
@@ -145,31 +160,56 @@ function mockEnvironment(t, drive) {
       return response({
         name: drive.fileId || 'firestore-snapshot',
         updateTime: drive.etag || '2026-07-28T00:00:00.000Z',
-        fields: {
+        fields: drive.metaFields || {
           envelopeData: { stringValue: JSON.stringify(drive.envelope) },
           modifiedTime: { stringValue: '2026-07-28T00:00:00.000Z' }
         }
       }, { headers: { etag: drive.etag || '"etag-1"' } });
     }
+    if (options.method === 'PATCH' && chunkMatch) {
+      const body = JSON.parse(options.body);
+      drive.chunks.set(chunkMatch[1], {
+        commitId: body.fields.commitId.stringValue,
+        index: Number(body.fields.index.integerValue),
+        data: body.fields.data.stringValue
+      });
+      return response({ name: chunkMatch[1], updateTime: new Date().toISOString() });
+    }
+    if (options.method === 'DELETE' && chunkMatch) {
+      drive.chunks.delete(chunkMatch[1]);
+      return response(null, { status: 204 });
+    }
     if (options.method === 'PATCH' || options.method === 'POST') {
       patchCount += 1;
       createCount += 1;
       if (typeof drive.onPatch === 'function') {
-        const custom = await drive.onPatch({ options, patchCount, drive });
+        const custom = await drive.onPatch({ options, patchCount, drive, url: requestUrl });
         if (custom) return custom;
       }
-      if (options.headers && options.headers['If-Match'] && options.headers['If-Match'] !== drive.etag) {
+      const expectedEtag = requestUrl.searchParams.get('currentDocument.updateTime');
+      const expectedAbsent = requestUrl.searchParams.get('currentDocument.exists') === 'false';
+      if ((expectedEtag && expectedEtag !== drive.etag) || (expectedAbsent && drive.envelope)) {
         return response({ error: 'precondition' }, { status: 412 });
       }
       try {
         const body = JSON.parse(options.body);
         if (body.fields?.envelopeData?.stringValue) {
           drive.envelope = JSON.parse(body.fields.envelopeData.stringValue);
+          drive.metaFields = body.fields;
+        } else if (body.fields?.format?.stringValue === 'aegis-firestore-chunks-v1') {
+          drive.metaFields = body.fields;
+          const commitId = body.fields.commitId.stringValue;
+          const chunkCount = Number(body.fields.chunkCount.integerValue);
+          const raw = Array.from({ length: chunkCount }, (_, index) => {
+            const chunkId = `${commitId}_${String(index).padStart(5, '0')}`;
+            return drive.chunks.get(chunkId)?.data || '';
+          }).join('');
+          drive.envelope = JSON.parse(raw);
         } else {
           drive.envelope = body;
         }
       } catch {}
-      drive.etag = `"etag-${patchCount + 1}"`;
+      drive.etag = `2026-07-28T00:00:${String(patchCount + 1).padStart(2, '0')}.000Z`;
       return response(
         { name: drive.fileId || 'firestore-snapshot', updateTime: drive.etag },
         { headers: { etag: drive.etag } }
@@ -189,18 +229,18 @@ function mockEnvironment(t, drive) {
   };
 }
 
-test('conflict resolution never lets a device copy overwrite Drive', async t => {
+test('conflict resolution never lets a device copy overwrite Firestore', async t => {
   const environment = mockEnvironment(t, {});
 
   await assert.rejects(
     resolveSyncConflict(googleSub, password, 'keep-local'),
-    /Drive là nguồn dữ liệu chính/
+    /Firestore là nguồn dữ liệu chính/
   );
   assert.equal(environment.getPatchCount(), 0);
   assert.equal(environment.getCreateCount(), 0);
 });
 
-test('unlock automatically adopts the signed-in account Drive branch', async t => {
+test('unlock automatically adopts the signed-in account Firestore branch', async t => {
   const base = {
     schemaVersion: 3,
     vaultId: 'auto-drive-vault',
@@ -233,7 +273,7 @@ test('unlock automatically adopts the signed-in account Drive branch', async t =
 
   const unlocked = await unlockVault(password, user);
 
-  // adoptStagedRemote keeps the Drive copy; local backup is preserved for recovery
+  // adoptStagedRemote keeps the Firestore copy; local backup is preserved for recovery
   assert.ok(unlocked.credentials.length >= 1);
   assert.equal(
     environment.local.values.get(`aegisVault_${googleSub}_pre_cloud_recovery`).envelope.payload,
@@ -241,7 +281,7 @@ test('unlock automatically adopts the signed-in account Drive branch', async t =
   );
 });
 
-test('unlock rejects a device-only password when Drive is authoritative', async t => {
+test('unlock rejects a device-only password when Firestore is authoritative', async t => {
   const localPassword = 'device-only password with enough entropy';
   const drivePassword = 'drive-only password with enough entropy';
   const meta = {
@@ -268,7 +308,7 @@ test('unlock rejects a device-only password when Drive is authoritative', async 
 
   await assert.rejects(
     unlockVault(localPassword, user),
-    /mật khẩu của Vault trên Drive/
+    /mật khẩu của Vault trên Firestore/
   );
   assert.equal(
     environment.local.values.get(`aegisVault_${googleSub}`).payload,
@@ -306,10 +346,10 @@ test('two same-revision device branches auto-merge and upload the union', async 
     etag: '"etag-a"'
   });
 
-  const result = await syncToGDrive(googleSub, localEnvelope, { password });
+  const result = await syncToFirestore(googleSub, localEnvelope, { password });
   assert.equal(result.ok, true);
   assert.equal(result.action, 'merged');
-  // The merged version was uploaded to Drive
+  // The merged version was uploaded to Firestore
   assert.equal(environment.getPatchCount(), 1);
   // Verify the merged vault contains both credentials
   const mergedEnvelope = environment.local.values.get(`aegisVault_${googleSub}`);
@@ -355,7 +395,7 @@ test('an ETag race stages the re-read competing snapshot instead of overwriting 
   const localEnvelope = await createEnvelope(localData, password);
   const environment = mockEnvironment(t, drive);
 
-  const result = await syncToGDrive(googleSub, localEnvelope, { password });
+  const result = await syncToFirestore(googleSub, localEnvelope, { password });
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'etag-mismatch');
   assert.equal(environment.getPatchCount(), 1);
@@ -397,7 +437,7 @@ test('a failed post-412 refresh reports retryable error without fake resolvable 
   const localEnvelope = await createEnvelope(localData, password);
   const environment = mockEnvironment(t, drive);
 
-  const result = await syncToGDrive(googleSub, localEnvelope, { password });
+  const result = await syncToFirestore(googleSub, localEnvelope, { password });
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'etag-refresh-failed');
   assert.equal(result.status.state, 'error');
@@ -448,7 +488,7 @@ test('failed password-rotation upload retries safely using persisted ETag proof'
     data: remoteData
   };
 
-  const first = await syncToGDrive(googleSub, localEnvelope, {
+  const first = await syncToFirestore(googleSub, localEnvelope, {
     password: newPassword,
     remotePassword: oldPassword,
     preflight
@@ -458,7 +498,7 @@ test('failed password-rotation upload retries safely using persisted ETag proof'
   assert.equal(first.status.retryable, true);
   assert.ok(environment.local.values.get(`aegisVault_${googleSub}_pending_upload`));
 
-  const retry = await syncFromGDrive(googleSub, newPassword);
+  const retry = await syncFromFirestore(googleSub, newPassword);
   assert.equal(retry.ok, true);
   assert.equal(retry.action, 'uploaded');
   assert.equal(environment.getPatchCount(), 2);
@@ -494,7 +534,7 @@ test('new cloud password stages local mismatch, then explicit adoption preserves
   });
   await environment.local.set({ [`aegisVault_${googleSub}`]: localEnvelope });
 
-  const staged = await syncFromGDrive(googleSub, newPassword);
+  const staged = await syncFromFirestore(googleSub, newPassword);
   assert.equal(staged.ok, false);
   assert.equal(staged.reason, 'local-password-mismatch');
   assert.equal(staged.status.state, 'staged');
@@ -543,7 +583,7 @@ test('old local password plus a different remote password blocks subsequent writ
   });
   await environment.local.set({ [`aegisVault_${googleSub}`]: localEnvelope });
 
-  const conflict = await syncFromGDrive(googleSub, localPassword);
+  const conflict = await syncFromFirestore(googleSub, localPassword);
   assert.equal(conflict.reason, 'remote-password-mismatch');
   assert.equal(conflict.status.state, 'conflict');
   await assert.rejects(
@@ -553,7 +593,7 @@ test('old local password plus a different remote password blocks subsequent writ
   assert.equal(environment.getPatchCount(), 0);
 });
 
-test('duplicate same-name Drive files report a non-resolvable error state', async t => {
+test('duplicate same-name Firestore files report a non-resolvable error state', async t => {
   const localData = vaultData({
     schemaVersion: 3,
     vaultId: 'duplicate-vault',
@@ -572,7 +612,7 @@ test('duplicate same-name Drive files report a non-resolvable error state', asyn
     etag: null
   });
 
-  const result = await syncToGDrive(googleSub, localEnvelope, { password });
+  const result = await syncToFirestore(googleSub, localEnvelope, { password });
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'duplicate-remote-files');
   assert.equal(result.status.state, 'error');
@@ -611,7 +651,7 @@ test('unscoped legacy vault is claimed only after a successful unlock and migrat
   assert.equal(await hasVault('another-google-user'), false);
 });
 
-test('manual sync uploads an unlocked local-only vault when Drive is empty', async t => {
+test('manual sync uploads an unlocked local-only vault when Firestore is empty', async t => {
   const localData = vaultData({
     schemaVersion: 3,
     vaultId: 'local-only-vault',

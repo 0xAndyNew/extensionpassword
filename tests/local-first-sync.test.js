@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-test('normal credential and OTP mutations save locally before background Drive sync', async () => {
+test('normal credential and OTP mutations save locally before background Firestore sync', async () => {
   const [background, popup, repository] = await Promise.all([
     readFile(new URL('../src/background.js', import.meta.url), 'utf8'),
     readFile(new URL('../src/ui/popup.js', import.meta.url), 'utf8'),
@@ -18,13 +18,13 @@ test('normal credential and OTP mutations save locally before background Drive s
   assert.match(background, /\{ kind: 'otp-delete', id \}/);
   assert.match(background, /\{ kind: 'otp-reorder', ids \}/);
   assert.match(background, /respond\(\{ ok: true, \.\.\.publicResult \}\);[\s\S]*enqueueMutation\(runAutomaticSync\)/);
-  assert.match(background, /isForegroundMutation && automaticSyncInFlight[\s\S]*abortActiveDriveRequests\(\)/);
+  assert.match(background, /isForegroundMutation && automaticSyncInFlight[\s\S]*abortActiveSyncRequests\(\)/);
   assert.match(background, /automaticSyncInFlight = true;[\s\S]*finally \{[\s\S]*automaticSyncInFlight = false/);
   assert.match(background, /aegisPendingMutations_/);
   assert.match(background, /async function syncPendingLocalMutations\(user, password\)/);
   assert.match(background, /const maxMergeAttempts = 3/);
   assert.match(background, /clearQrSyncCoveredBy\(operations\)/);
-  assert.match(background, /replayPendingMutations\(driveVault, localBeforeSync, operations\)/);
+  assert.match(background, /replayPendingMutations\(remoteVault, localBeforeSync, operations\)/);
   assert.match(background, /async function promotePendingQrSync\(user, password\)/);
   assert.match(background, /explicitlyDeletedIds\.has\(id\)/);
   assert.match(background, /upsertIds\.map\(id => \(\{ kind: 'otp-upsert', id \}\)\)/);

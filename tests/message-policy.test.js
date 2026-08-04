@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authorizeMessage, getMessageContext } from '../src/message-policy.js';
+import { authorizeMessage, getMessageContext, isContentAction } from '../src/message-policy.js';
 
 const runtimeId = 'abcdefghijklmnopabcdefghijklmnop';
 const contentSender = {
@@ -36,6 +36,37 @@ test('allows only the narrow content-script action list', () => {
   assert.doesNotThrow(
     () => authorizeMessage({ type: 'SAVE_QR_URI' }, contentSender, runtimeId)
   );
+});
+
+test('allows temporary login capture actions and derives their origin from sender', () => {
+  for (const type of ['STAGE_LOGIN_CAPTURE', 'TAKE_LOGIN_CAPTURE']) {
+    const result = authorizeMessage({
+      type,
+      origin: 'https://spoofed.example',
+      username: 'user@example.com',
+      password: 'secret'
+    }, contentSender, runtimeId);
+    assert.equal(result.context.kind, 'content');
+    assert.equal(result.message.origin, 'https://login.example.com');
+    assert.equal(isContentAction(type), true);
+  }
+});
+
+test('preserves a claimed capture origin for background verification after redirects', () => {
+  const result = authorizeMessage({
+    type: 'CHECK_CAPTURE_ACCOUNT',
+    origin: 'https://spoofed.example',
+    captureOrigin: 'https://login.live.com',
+    username: 'user@example.com',
+    password: 'secret'
+  }, {
+    ...contentSender,
+    url: 'https://account.microsoft.com/',
+    tab: { ...contentSender.tab, url: 'https://account.microsoft.com/' }
+  }, runtimeId);
+
+  assert.equal(result.message.origin, 'https://account.microsoft.com');
+  assert.equal(result.message.captureOrigin, 'https://login.live.com');
 });
 
 test('trusts extension pages belonging to this runtime', () => {

@@ -1,4 +1,4 @@
-(() => {
+(async () => {
   'use strict';
 
   const CLEANUP_KEY = '__aegisQrSelectorCleanup';
@@ -13,11 +13,44 @@
 
   let host = null;
 
+  const TEXT = {
+    en: {
+      connectError: 'Could not connect to Aegis Vault.', screenshotError: 'Could not read the screenshot.',
+      regionTooSmall: 'The QR selection is too small.', decoderMissing: 'The QR decoder is not loaded. Reload the extension and try again.',
+      selectHint: 'Drag around exactly one QR code · Press Esc to cancel', cancel: 'Cancel',
+      releaseHint: 'Release when the frame contains only the QR code you want',
+      retrySmall: 'The selection is too small. Drag around the entire QR code.', readingRegion: 'Reading the selected QR region…',
+      captureError: 'Could not capture the QR region. Try again.', detecting: 'Detecting QR code…',
+      detectError: 'No QR code was detected. Select the entire code with a small white margin.', saving: 'Saving OTP automatically…',
+      saveError: 'Could not save the OTP code.', duplicate: 'This OTP code already exists in Aegis Vault',
+      saved: 'QR scanned and OTP saved automatically', processError: 'Could not process the selected QR region.'
+    },
+    vi: {
+      connectError: 'Không thể kết nối với Aegis Vault.', screenshotError: 'Không đọc được ảnh chụp màn hình.',
+      regionTooSmall: 'Vùng chọn QR quá nhỏ.', decoderMissing: 'Bộ nhận diện QR chưa được nạp. Hãy tải lại extension rồi thử lại.',
+      selectHint: 'Kéo chuột khoanh đúng 1 mã QR · Nhấn Esc để hủy', cancel: 'Hủy',
+      releaseHint: 'Thả chuột khi khung chỉ chứa mã QR cần lấy',
+      retrySmall: 'Vùng chọn quá nhỏ. Hãy kéo khoanh trọn mã QR.', readingRegion: 'Đang đọc mã QR trong vùng đã chọn…',
+      captureError: 'Không chụp được vùng QR. Hãy thử lại.', detecting: 'Đang nhận diện mã QR…',
+      detectError: 'Không nhận diện được QR. Hãy khoanh sát trọn mã và chừa một ít viền trắng.', saving: 'Đang tự lưu mã OTP…',
+      saveError: 'Không lưu được mã OTP.', duplicate: 'Mã OTP này đã có trong Aegis Vault',
+      saved: 'Đã quét xong và tự lưu mã OTP', processError: 'Không xử lý được vùng QR đã chọn.'
+    }
+  };
+  let language = 'en';
+  try {
+    const stored = await chrome.storage.local.get(['aegisLanguage']);
+    language = stored.aegisLanguage === 'vi' ? 'vi' : 'en';
+  } catch {
+    language = 'en';
+  }
+  const text = TEXT[language];
+
   const send = async message => {
     try {
       return await chrome.runtime.sendMessage({ ...message, origin: ORIGIN });
     } catch (error) {
-      return { ok: false, error: error?.message || 'Không thể kết nối với Aegis Vault.' };
+      return { ok: false, error: error?.message || text.connectError };
     }
   };
 
@@ -41,7 +74,7 @@
   const loadScreenshot = dataUrl => new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('Không đọc được ảnh chụp màn hình.'));
+    image.onerror = () => reject(new Error(text.screenshotError));
     image.src = dataUrl;
   });
 
@@ -60,7 +93,7 @@
       Math.max(1, Math.ceil(rect.height * scaleY))
     );
     if (sourceWidth < 12 || sourceHeight < 12) {
-      throw new Error('Vùng chọn QR quá nhỏ.');
+      throw new Error(text.regionTooSmall);
     }
 
     const outputScale = Math.min(1, 1100 / Math.max(sourceWidth, sourceHeight));
@@ -122,7 +155,7 @@
   const decodeQrCanvas = async source => {
     const decoder = globalThis.jsQR;
     if (typeof decoder !== 'function') {
-      throw new Error('Bộ nhận diện QR chưa được nạp. Hãy tải lại extension rồi thử lại.');
+      throw new Error(text.decoderMissing);
     }
     const padded = makePaddedCanvas(source);
     const context = padded.getContext('2d', { willReadFrequently: true });
@@ -219,11 +252,11 @@
   layer.className = 'selector';
   const hint = document.createElement('div');
   hint.className = 'hint';
-  hint.textContent = 'Kéo chuột khoanh đúng 1 mã QR · Nhấn Esc để hủy';
+  hint.textContent = text.selectHint;
   const cancel = document.createElement('button');
   cancel.type = 'button';
   cancel.className = 'cancel';
-  cancel.textContent = 'Hủy';
+  cancel.textContent = text.cancel;
   const selection = document.createElement('div');
   selection.className = 'selection';
   layer.append(hint, cancel, selection);
@@ -281,7 +314,7 @@
     startX = event.clientX;
     startY = event.clientY;
     hint.classList.remove('error');
-    hint.textContent = 'Thả chuột khi khung chỉ chứa mã QR cần lấy';
+    hint.textContent = text.releaseHint;
     layer.classList.add('selecting');
     selection.style.display = 'block';
     layer.setPointerCapture(event.pointerId);
@@ -304,14 +337,14 @@
 
     const rect = updateSelection(event.clientX, event.clientY);
     if (rect.width < 24 || rect.height < 24) {
-      resetForRetry('Vùng chọn quá nhỏ. Hãy kéo khoanh trọn mã QR.');
+      resetForRetry(text.retrySmall);
       return;
     }
 
     processing = true;
     layer.style.cursor = 'wait';
     hint.classList.remove('error');
-    hint.textContent = 'Đang đọc mã QR trong vùng đã chọn…';
+    hint.textContent = text.readingRegion;
     hint.style.display = 'none';
     cancel.style.display = 'none';
     selection.style.borderColor = 'transparent';
@@ -319,35 +352,33 @@
 
     const capture = await send({ type: 'CAPTURE_QR_SELECTION' });
     if (!capture?.ok || !capture.screenshot) {
-      resetForRetry(capture?.error || 'Không chụp được vùng QR. Hãy thử lại.');
+      resetForRetry(capture?.error || text.captureError);
       return;
     }
 
     try {
       const qrCanvas = await cropScreenshot(capture.screenshot, rect);
       hint.style.display = 'block';
-      hint.textContent = 'Đang nhận diện mã QR…';
+      hint.textContent = text.detecting;
       const uri = await decodeQrCanvas(qrCanvas);
       if (!uri) {
-        resetForRetry('Không nhận diện được QR. Hãy khoanh sát trọn mã và chừa một ít viền trắng.');
+        resetForRetry(text.detectError);
         return;
       }
-      hint.textContent = 'Đang tự lưu mã OTP…';
+      hint.textContent = text.saving;
       const saved = await send({ type: 'SAVE_QR_URI', uri });
       if (!saved?.ok) {
-        resetForRetry(saved?.error || 'Không lưu được mã OTP.');
+        resetForRetry(saved?.error || text.saveError);
         return;
       }
       hint.classList.add('success');
-      hint.textContent = saved.duplicate
-        ? 'Mã OTP này đã có trong Aegis Vault'
-        : 'Đã quét xong và tự lưu mã OTP';
+      hint.textContent = saved.duplicate ? text.duplicate : text.saved;
       selection.style.display = 'none';
       layer.classList.remove('selecting');
       layer.style.cursor = 'default';
       setTimeout(cleanup, 900);
     } catch (error) {
-      resetForRetry(error?.message || 'Không xử lý được vùng QR đã chọn.');
+      resetForRetry(error?.message || text.processError);
     }
   };
 

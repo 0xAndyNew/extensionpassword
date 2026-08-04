@@ -27,12 +27,12 @@ export function coalescePendingMutations(existing, incoming) {
     : operations;
 }
 
-export function replayPendingMutations(driveVault, localVault, operations) {
+export function replayPendingMutations(remoteVault, localVault, operations) {
   if (operations.some(operation => operation.kind === 'replace-vault')) {
     return structuredClone(localVault);
   }
 
-  const merged = structuredClone(driveVault);
+  const merged = structuredClone(remoteVault);
   merged.credentials = Array.isArray(merged.credentials) ? merged.credentials : [];
   merged.otpAccounts = Array.isArray(merged.otpAccounts) ? merged.otpAccounts : [];
   const localCredentials = new Map(

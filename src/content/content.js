@@ -229,6 +229,10 @@
   let contextValid = true;
   let mutationObserver = null;
   let qrSelectionHost = null;
+  let rememberedUsername = '';
+  let rememberedUsernameAt = 0;
+  const REMEMBERED_USERNAME_TTL_MS = 5 * 60 * 1000;
+  const LOGIN_CAPTURE_NOTICE_TTL_MS = 2 * 60 * 1000;
 
   const icons = new Map();
   const wiredPasswordFields = new WeakSet();
@@ -257,6 +261,8 @@
     window.removeEventListener('focus', handleWindowFocus);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+    document.removeEventListener('input', handleLoginInput, true);
+    document.removeEventListener('click', handlePotentialLoginClick, true);
     try {
       chrome.runtime?.onMessage?.removeListener(handleRuntimeMessage);
     } catch {
@@ -281,6 +287,56 @@
       return Promise.resolve(null);
     }
   };
+
+  const CAPTURE_TEXT = {
+    vi: {
+      saveAria: 'Lưu tài khoản vào Aegis Vault',
+      updateAria: 'Cập nhật mật khẩu trong Aegis Vault',
+      saveTitle: 'Lưu tài khoản?',
+      updateTitle: 'Cập nhật mật khẩu?',
+      saveDescription: 'Lưu thông tin đăng nhập này vào Aegis Vault?',
+      updateDescription: 'Cập nhật mật khẩu mới cho tài khoản này trong Aegis Vault?',
+      username: 'Tên đăng nhập',
+      dismiss: 'Bỏ qua',
+      save: 'Lưu tài khoản',
+      update: 'Cập nhật mật khẩu',
+      saveError: 'Không thể lưu tài khoản.',
+      updateError: 'Không thể cập nhật mật khẩu.',
+      unlockTitle: 'Mở khóa Aegis Vault để lưu',
+      unlockDescription: 'Vault đang khóa hoặc chưa đăng nhập. Hãy mở Aegis, mở khóa rồi quay lại trang này.',
+      unlockRetryDescription: 'Sau khi mở khóa Aegis Vault, quay lại trang này và nhấn Thử lại.',
+      openVault: 'Mở Aegis Vault',
+      retry: 'Thử lại'
+    },
+    en: {
+      saveAria: 'Save login to Aegis Vault',
+      updateAria: 'Update password in Aegis Vault',
+      saveTitle: 'Save login?',
+      updateTitle: 'Update password?',
+      saveDescription: 'Save these login details to Aegis Vault?',
+      updateDescription: 'Update this account with the new password in Aegis Vault?',
+      username: 'Username',
+      dismiss: 'Not now',
+      save: 'Save login',
+      update: 'Update password',
+      saveError: 'Could not save this login.',
+      updateError: 'Could not update the password.',
+      unlockTitle: 'Unlock Aegis Vault to save',
+      unlockDescription: 'The vault is locked or signed out. Open Aegis, unlock it, then return to this page.',
+      unlockRetryDescription: 'After unlocking Aegis Vault, return to this page and select Try again.',
+      openVault: 'Open Aegis Vault',
+      retry: 'Try again'
+    }
+  };
+
+  async function getCaptureText() {
+    try {
+      const stored = await chrome.storage.local.get(['aegisLanguage']);
+      return CAPTURE_TEXT[stored.aegisLanguage === 'vi' ? 'vi' : 'en'];
+    } catch {
+      return CAPTURE_TEXT.en;
+    }
+  }
 
   function setImportantStyle(element, property, value) {
     element.style.setProperty(property, value, 'important');
@@ -667,27 +723,49 @@
     const root = passwordInput.form || document;
     const allPasswords = getPasswordFields(root);
     const visiblePasswords = allPasswords.filter(isVisible);
-
-    // Multiple password fields and `new-password` are typical change-password
-    // or registration forms. Do not offer to save them as a login credential.
-    if (visiblePasswords.length !== 1 || visiblePasswords[0] !== passwordInput) return null;
-    if (allPasswords.some((input) => autocompleteTokens(input).includes('new-password'))) return null;
-
     const usernameInput = findUsernameField(passwordInput);
-    const username = usernameInput?.value.trim() || '';
+    const username = usernameInput?.value.trim()
+      || (Date.now() - rememberedUsernameAt <= REMEMBERED_USERNAME_TTL_MS ? rememberedUsername : '');
+    if (!username) return null;
+
+    const currentFields = visiblePasswords.filter(input => autocompleteTokens(input).includes('current-password'));
+    const newFields = visiblePasswords.filter(input => autocompleteTokens(input).includes('new-password'));
+    if (newFields.length) {
+      if (currentFields.length > 1 || newFields.length > 2) return null;
+      const newPassword = newFields[0].value;
+      if (!newPassword || (newFields.length === 2 && newFields[1].value !== newPassword)) return null;
+      return { username, password: newPassword, intent: 'update' };
+    }
+
+    if (visiblePasswords.length !== 1 || visiblePasswords[0] !== passwordInput) return null;
     const password = passwordInput.value;
-    if (!username || !password) return null;
-    return { username, password };
+    if (!password) return null;
+    return { username, password, intent: 'login' };
   }
 
-  async function showSaveBanner(username, password) {
-    if (!(await refreshAccess()) || !uiLayer) return;
-    closeBanner();
+  function rememberUsernameFrom(input) {
+    if (!(input instanceof HTMLInputElement) || input.type === 'password') return;
+    const value = input.value.trim();
+    if (!value) return;
+    const descriptor = usernameDescriptor(input);
+    const tokens = autocompleteTokens(input);
+    if (
+      tokens.includes('username')
+      || tokens.includes('email')
+      || input.type === 'email'
+      || /(?:user(?:name|id)?|login|e-?mail|account|identifier|tài\s*khoản|tên\s*đăng\s*nhập)/i.test(descriptor)
+    ) {
+      rememberedUsername = value;
+      rememberedUsernameAt = Date.now();
+    }
+  }
 
+  function showUnlockCaptureBanner(username, password, intent, captureOrigin, text) {
+    closeBanner();
     const banner = document.createElement('section');
     banner.className = 'banner';
     banner.setAttribute('role', 'dialog');
-    banner.setAttribute('aria-label', 'Lưu tài khoản vào Aegis Vault');
+    banner.setAttribute('aria-label', text.unlockTitle);
 
     const header = document.createElement('div');
     header.className = 'banner-header';
@@ -696,21 +774,97 @@
     logo.textContent = 'A';
     const headingGroup = document.createElement('div');
     const heading = document.createElement('h2');
-    heading.textContent = 'Lưu tài khoản?';
+    heading.textContent = text.unlockTitle;
     const description = document.createElement('p');
-    description.textContent = 'Lưu thông tin đăng nhập này vào Aegis Vault?';
+    description.textContent = text.unlockDescription;
+    headingGroup.append(heading, description);
+    header.append(logo, headingGroup);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'cancel';
+    cancel.textContent = text.dismiss;
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'save';
+    open.textContent = text.openVault;
+    actions.append(cancel, open);
+    banner.append(header, actions);
+
+    let waitingForUnlock = false;
+    cancel.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (!event.isTrusted) return;
+      void send({ type: 'DISMISS_LOGIN_CAPTURE' });
+      closeBanner();
+    });
+    open.addEventListener('click', (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      if (!event.isTrusted) return;
+      if (!waitingForUnlock) {
+        waitingForUnlock = true;
+        description.textContent = text.unlockRetryDescription;
+        open.textContent = text.retry;
+        void send({ type: 'OPEN_OPTIONS' });
+        return;
+      }
+      closeBanner();
+      void showSaveBanner(username, password, intent, captureOrigin);
+    });
+
+    uiLayer.appendChild(banner);
+    activeBanner = banner;
+    activeBannerTimer = setTimeout(closeBanner, LOGIN_CAPTURE_NOTICE_TTL_MS);
+  }
+
+  async function showSaveBanner(username, password, intent = 'login', captureOrigin = PAGE_ORIGIN) {
+    if (!(await refreshAccess()) || !uiLayer) return;
+    const text = await getCaptureText();
+    const account = await send({
+      type: 'CHECK_CAPTURE_ACCOUNT',
+      username,
+      password,
+      captureOrigin
+    });
+    if (!account?.ok) {
+      if (contextValid && uiLayer) showUnlockCaptureBanner(username, password, intent, captureOrigin, text);
+      return;
+    }
+    if (account.unchanged) return;
+    const isUpdate = intent === 'update' || account.found;
+    closeBanner();
+
+    const banner = document.createElement('section');
+    banner.className = 'banner';
+    banner.setAttribute('role', 'dialog');
+    banner.setAttribute('aria-label', isUpdate ? text.updateAria : text.saveAria);
+
+    const header = document.createElement('div');
+    header.className = 'banner-header';
+    const logo = document.createElement('div');
+    logo.className = 'logo';
+    logo.textContent = 'A';
+    const headingGroup = document.createElement('div');
+    const heading = document.createElement('h2');
+    heading.textContent = isUpdate ? text.updateTitle : text.saveTitle;
+    const description = document.createElement('p');
+    description.textContent = isUpdate ? text.updateDescription : text.saveDescription;
     headingGroup.append(heading, description);
     header.append(logo, headingGroup);
 
     const field = document.createElement('label');
     field.className = 'field';
     const labelText = document.createElement('span');
-    labelText.textContent = 'Tên đăng nhập';
+    labelText.textContent = text.username;
     const usernameInput = document.createElement('input');
     usernameInput.type = 'text';
     usernameInput.autocomplete = 'off';
     usernameInput.spellcheck = false;
     usernameInput.value = username;
+    usernameInput.readOnly = isUpdate || captureOrigin !== PAGE_ORIGIN;
     field.append(labelText, usernameInput);
 
     const error = document.createElement('p');
@@ -722,17 +876,18 @@
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'cancel';
-    cancel.textContent = 'Bỏ qua';
+    cancel.textContent = text.dismiss;
     const save = document.createElement('button');
     save.type = 'button';
     save.className = 'save';
-    save.textContent = 'Lưu tài khoản';
+    save.textContent = isUpdate ? text.update : text.save;
     actions.append(cancel, save);
     banner.append(header, field, error, actions);
 
     cancel.addEventListener('click', (event) => {
       event.stopPropagation();
       if (!event.isTrusted) return;
+      void send({ type: 'DISMISS_LOGIN_CAPTURE' });
       closeBanner();
     });
 
@@ -745,15 +900,17 @@
         if (!finalUsername || !(await refreshAccess())) return;
         save.disabled = true;
         const result = await send({
-          type: 'SAVE',
+          type: isUpdate ? 'UPDATE_CAPTURE_PASSWORD' : 'SAVE',
           username: finalUsername,
-          password
+          password,
+          captureOrigin
         });
         if (result?.ok) {
+          await send({ type: 'DISMISS_LOGIN_CAPTURE' });
           closeBanner();
           return;
         }
-        error.textContent = result?.error || 'Không thể lưu tài khoản.';
+        error.textContent = isUpdate ? text.updateError : text.saveError;
         error.hidden = false;
         save.disabled = false;
       })();
@@ -762,6 +919,41 @@
     uiLayer.appendChild(banner);
     activeBanner = banner;
     activeBannerTimer = setTimeout(closeBanner, 30000);
+  }
+
+  function hasVisibleLoginError(root) {
+    const selectors = '[role="alert"], [aria-live="assertive"], .error, .invalid, .alert-danger';
+    return [...root.querySelectorAll(selectors)].some(element => {
+      if (!isVisible(element)) return false;
+      return /(?:invalid|incorrect|failed|wrong|denied|sai|không đúng|thất bại|không hợp lệ)/i.test(element.textContent || '');
+    });
+  }
+
+  function waitForLoginOutcome(candidate, sourceRoot) {
+    const initialUrl = location.href;
+    const deadline = Date.now() + 8000;
+    const checkOutcome = async () => {
+      if (!contextValid || !samePageOrigin()) return;
+      if (hasVisibleLoginError(sourceRoot || document)) {
+        await send({ type: 'DISMISS_LOGIN_CAPTURE' });
+        return;
+      }
+      const passwordStillVisible = getPasswordFields(sourceRoot || document).some(isVisible);
+      const successSignal = location.href !== initialUrl || !passwordStillVisible;
+      if (successSignal) {
+        const check = await send({
+          type: 'CHECK_EXISTS',
+          username: candidate.username,
+          password: candidate.password
+        });
+        if (check?.ok && !check.exists && await refreshAccess()) {
+          await showSaveBanner(candidate.username, candidate.password, candidate.intent);
+        }
+        return;
+      }
+      if (Date.now() < deadline) setTimeout(checkOutcome, 300);
+    };
+    setTimeout(checkOutcome, 300);
   }
 
   function queueSaveCapture(passwordInput) {
@@ -778,18 +970,18 @@
       lastCaptureTimer = null;
     }, 15000);
 
+    void send({
+      type: 'STAGE_LOGIN_CAPTURE',
+      username: candidate.username,
+      password: candidate.password,
+      intent: candidate.intent
+    });
+
     if (pendingSaveTimer) clearTimeout(pendingSaveTimer);
-    pendingSaveTimer = setTimeout(async () => {
+    pendingSaveTimer = setTimeout(() => {
       pendingSaveTimer = null;
-      if (!(await refreshAccess())) return;
-      const check = await send({
-        type: 'CHECK_EXISTS',
-        username: candidate.username,
-        password: candidate.password
-      });
-      if (!check?.ok || check.exists || !(await refreshAccess())) return;
-      await showSaveBanner(candidate.username, candidate.password);
-    }, 650);
+      waitForLoginOutcome(candidate, passwordInput.form || document);
+    }, 0);
   }
 
   function isSubmitControl(element, form) {
@@ -818,14 +1010,41 @@
     form.addEventListener('click', (event) => {
       if (!event.isTrusted || !isSubmitControl(event.target, form)) return;
       const passwordFields = getPasswordFields(form).filter(isVisible);
-      if (passwordFields.length === 1) queueSaveCapture(passwordFields[0]);
+      if (passwordFields.length) queueSaveCapture(passwordFields[0]);
     }, { capture: true });
 
     form.addEventListener('submit', (event) => {
       if (!event.isTrusted) return;
       const passwordFields = getPasswordFields(form).filter(isVisible);
-      if (passwordFields.length === 1) queueSaveCapture(passwordFields[0]);
+      if (passwordFields.length) queueSaveCapture(passwordFields[0]);
     }, { capture: true });
+  }
+
+  function handleLoginInput(event) {
+    if (!event.isTrusted) return;
+    rememberUsernameFrom(event.target);
+  }
+
+  function handlePotentialLoginClick(event) {
+    if (!event.isTrusted || !(event.target instanceof Element)) return;
+    const control = event.target.closest('button, [role="button"], input[type="button"], input[type="submit"]');
+    if (!control || control.disabled) return;
+    const label = `${control.textContent || ''} ${control.getAttribute('aria-label') || ''} ${control.value || ''}`;
+    const isLoginAction = /(?:sign\s*in|log\s*in|login|đăng\s*nhập|tiếp\s*tục|continue|next)/i.test(label);
+    const isPasswordAction = /(?:change|update|save)\s*(?:the\s*)?password|đổi\s*mật\s*khẩu|cập\s*nhật\s*mật\s*khẩu/i.test(label);
+    if (!isLoginAction && !isPasswordAction) return;
+    const passwordFields = getPasswordFields().filter(isVisible);
+    if (passwordFields.length) {
+      queueSaveCapture(passwordFields[0]);
+      return;
+    }
+    if (!isLoginAction || !rememberedUsername) return;
+    void send({
+      type: 'STAGE_LOGIN_CAPTURE',
+      username: rememberedUsername,
+      password: '',
+      intent: 'username'
+    });
   }
 
   function wire() {
@@ -1174,6 +1393,19 @@
   window.addEventListener('focus', handleWindowFocus);
   document.addEventListener('visibilitychange', handleVisibilityChange);
   document.addEventListener('pointerdown', handleDocumentPointerDown, { capture: true });
+  document.addEventListener('input', handleLoginInput, { capture: true });
+  document.addEventListener('click', handlePotentialLoginClick, { capture: true });
 
-  void refreshAccess();
+  void (async () => {
+    if (!(await refreshAccess())) return;
+    const staged = await send({ type: 'TAKE_LOGIN_CAPTURE' });
+    if (!staged?.ok || !staged.capture) return;
+    const { username, password, intent, sourceOrigin } = staged.capture;
+    if (!password) {
+      rememberedUsername = username;
+      rememberedUsernameAt = Date.now();
+      return;
+    }
+    await showSaveBanner(username, password, intent, sourceOrigin || PAGE_ORIGIN);
+  })();
 })();

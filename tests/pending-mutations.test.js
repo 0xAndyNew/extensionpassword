@@ -29,16 +29,16 @@ test('pending mutation queue keeps only the latest operation per item and OTP or
   );
 });
 
-test('pending local operations replay on top of a newer Drive vault without losing unrelated data', () => {
+test('pending local operations replay on top of a newer Firestore vault without losing unrelated data', () => {
   const driveVault = {
     owner: { googleSub: 'user-1', email: 'user@example.com' },
     credentials: [
       { id: 'login-1', title: 'Old local value', username: 'old', password: 'old' },
-      { id: 'drive-only', title: 'Drive only', username: 'drive', password: 'drive' }
+      { id: 'drive-only', title: 'Firestore only', username: 'drive', password: 'drive' }
     ],
     otpAccounts: [
       { id: 'otp-delete', issuer: 'Delete me', account: 'old', secret: 'AAAA' },
-      { id: 'otp-drive', issuer: 'Drive', account: 'drive', secret: 'BBBB' }
+      { id: 'otp-drive', issuer: 'Firestore', account: 'drive', secret: 'BBBB' }
     ],
     excludedOrigins: [],
     settings: {},

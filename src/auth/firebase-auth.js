@@ -196,6 +196,12 @@ async function refreshFirebaseIdToken(refreshToken) {
 export async function getFirebaseIdToken({ interactive = false, forceRefresh = false } = {}) {
   await ensureTrustedStorageAccess();
   const stored = await getStoredTokens();
+  const user = await getFirebaseUser();
+
+  if (stored?.uid && user?.sub && stored.uid !== user.sub) {
+    await clearTokens();
+    throw new FirebaseAuthError('Phiên đăng nhập không khớp với tài khoản hiện tại.', 'TOKEN_OWNER_MISMATCH');
+  }
 
   if (!forceRefresh && stored?.idToken && Number.isFinite(stored.expiresAt) && stored.expiresAt > Date.now() + TOKEN_EXPIRY_SKEW_MS) {
     return stored.idToken;
@@ -213,9 +219,7 @@ export async function getFirebaseIdToken({ interactive = false, forceRefresh = f
       await saveTokens(updatedTokens);
       return refreshed.idToken;
     } catch (err) {
-      if (!interactive && stored?.idToken && !forceRefresh) {
-        return stored.idToken;
-      }
+      // Do not send an expired token after refresh has already failed.
     }
   }
 
@@ -254,7 +258,7 @@ export async function signInWithFirebase() {
   authUrl.search = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
-    response_type: 'id_token token',
+    response_type: 'id_token',
     scope: scopes.join(' '),
     prompt: 'select_account',
     state,
@@ -276,6 +280,9 @@ export async function signInWithFirebase() {
   }
 
   const hashParams = new URLSearchParams(new URL(responseUrl).hash.replace(/^#/, ''));
+  if (hashParams.get('state') !== state) {
+    throw new FirebaseAuthError('Phản hồi đăng nhập Google không hợp lệ.', 'OAUTH_STATE_MISMATCH');
+  }
   const googleIdToken = hashParams.get('id_token');
 
   if (!googleIdToken) {
@@ -286,7 +293,8 @@ export async function signInWithFirebase() {
   await saveTokens({
     idToken: authResult.idToken,
     refreshToken: authResult.refreshToken,
-    expiresAt: authResult.expiresAt
+    expiresAt: authResult.expiresAt,
+    uid: authResult.user.sub
   });
   await chrome.storage.local.set({ [AUTH_KEY]: authResult.user });
   return authResult.user;
@@ -316,7 +324,3 @@ export async function withFirebaseIdToken(
     throw error;
   }
 }
-
-export const withGoogleAccessToken = withFirebaseIdToken;
-
-

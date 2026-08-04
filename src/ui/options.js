@@ -1,10 +1,13 @@
 import { analyzeCredentials } from '../vault/password-security.js';
 import { generateTotp } from '../vault/totp.js';
 import { setSiteIcon } from './favicon.js';
-import { i18nInit, setLanguage, translateDocument, t } from '../i18n.js';
+import { i18nInit, localizeRuntimeText, setLanguage, translateDocument, t } from '../i18n.js';
 
 
 const $ = id => document.getElementById(id);
+let activeLanguage = 'en';
+const l = (english, vietnamese) => activeLanguage === 'vi' ? vietnamese : english;
+const lf = (english, vietnamese, values = {}) => l(english, vietnamese).replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
 let csvText = '';
 let managerCredentials = [];
 let managerNotes = [];
@@ -32,9 +35,12 @@ const MAX_BACKUP_FILE_BYTES = 10 * 1024 * 1024;
 
 async function send(message) {
   try {
-    return await chrome.runtime.sendMessage(message);
+    const response = await chrome.runtime.sendMessage(message);
+    if (response?.error) response.error = localizeRuntimeText(response.error, activeLanguage);
+    if (response?.message) response.message = localizeRuntimeText(response.message, activeLanguage);
+    return response;
   } catch (error) {
-    return { ok: false, error: error?.message || 'Không thể kết nối với Aegis Vault.' };
+    return { ok: false, error: error?.message || l('Cannot connect to Aegis Vault.', 'Không thể kết nối với Aegis Vault.') };
   }
 }
 
@@ -59,6 +65,7 @@ async function refreshSyncStatus(initialStatus) {
 }
 
 function updateOptionsLangUI(lang) {
+  activeLanguage = lang === 'vi' ? 'vi' : 'en';
   const btn = $('optionsLangBtn');
   if (btn) btn.textContent = lang === 'en' ? '🇬🇧 EN' : '🇻🇳 VI';
   const viBtn = $('optLangViBtn');
@@ -66,13 +73,15 @@ function updateOptionsLangUI(lang) {
   const enBtn = $('optLangEnBtn');
   if (enBtn) enBtn.classList.toggle('active', lang === 'en');
   translateDocument();
-  if (managerCredentials.length || managerNotes.length || managerCards.length || managerTrash.length) {
+  if (managerCredentials.length || managerNotes.length || managerCards.length || managerIdentities.length || managerTrash.length) {
     renderManager();
     renderNotes();
     renderCards();
+    renderIdentities();
     renderTrash();
     renderSecurityCenter();
   }
+  if (activeLoginDetail) openLoginDetail(activeLoginDetail);
 }
 
 function initOptionsLangUI() {
@@ -184,11 +193,11 @@ function renderUnlockPrompt(status) {
   const handleUnlock = async () => {
     const password = input.value;
     if (!password) {
-      errorText.textContent = 'Vui lòng nhập mật khẩu chính.';
+      errorText.textContent = l('Please enter your master password.', 'Vui lòng nhập mật khẩu chính.');
       return;
     }
     unlockBtn.disabled = true;
-    unlockBtn.textContent = 'Đang mở khóa…';
+    unlockBtn.textContent = l('Unlocking…', 'Đang mở khóa…');
     errorText.textContent = '';
 
     const res = await send({ type: 'UNLOCK', password });
@@ -197,8 +206,8 @@ function renderUnlockPrompt(status) {
       await refreshSyncStatus(res.syncStatus);
     } else {
       unlockBtn.disabled = false;
-      unlockBtn.textContent = 'Mở khóa Vault →';
-      errorText.textContent = res.error || 'Mật khẩu chính không đúng.';
+      unlockBtn.textContent = l('Unlock Vault →', 'Mở khóa Vault →');
+      errorText.textContent = res.error || l('Incorrect master password.', 'Mật khẩu chính không đúng.');
     }
   };
 
@@ -218,7 +227,7 @@ function updateProfileUI(user) {
 
   $('profileEmail').textContent = email || 'Google Account';
   $('identityName').textContent = name;
-  $('identityEmail').textContent = email || 'Chưa có email';
+  $('identityEmail').textContent = email || l('No email', 'Chưa có email');
 
   [$('googleAvatar'), $('identityAvatar')].forEach(container => {
     const fallback = name[0] || '?';
@@ -306,6 +315,53 @@ function getSafeWebUrl(value) {
   }
 }
 
+function showOpenLinkPopover(anchor, pointerX, pointerY, url) {
+  document.querySelector('.grid-card.context-open')?.classList.remove('context-open');
+  document.querySelector('.open-link-popover')?.remove();
+  anchor.classList.add('context-open');
+  const popover = document.createElement('div');
+  popover.className = 'open-link-popover';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', l('Confirm opening website', 'Xác nhận mở website'));
+  const heading = document.createElement('strong');
+  heading.textContent = l('Open website?', 'Mở website?');
+  const destination = document.createElement('span');
+  destination.textContent = new URL(url).host;
+  destination.title = url;
+  const actions = document.createElement('div');
+  actions.className = 'open-link-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.textContent = l('Cancel', 'Hủy');
+  const open = document.createElement('button');
+  open.type = 'button'; open.className = 'primary'; open.textContent = l('Open', 'Mở');
+  actions.append(cancel, open);
+  popover.append(heading, destination, actions);
+  document.body.append(popover);
+
+  const width = 220;
+  const gap = 8;
+  popover.style.left = `${Math.max(10, Math.min(pointerX + gap, window.innerWidth - width - 10))}px`;
+  popover.style.top = `${Math.max(10, Math.min(pointerY + gap, window.innerHeight - popover.offsetHeight - 10))}px`;
+
+  const close = () => {
+    document.removeEventListener('pointerdown', onOutsidePointer);
+    document.removeEventListener('keydown', onKeydown);
+    anchor.classList.remove('context-open');
+    popover.remove();
+  };
+  const onOutsidePointer = event => { if (!popover.contains(event.target)) close(); };
+  const onKeydown = event => { if (event.key === 'Escape') close(); };
+  cancel.onclick = event => { event.stopPropagation(); close(); };
+  open.onclick = event => {
+    event.stopPropagation();
+    void chrome.tabs.create({ url });
+    close();
+  };
+  popover.onclick = event => event.stopPropagation();
+  setTimeout(() => document.addEventListener('pointerdown', onOutsidePointer), 0);
+  document.addEventListener('keydown', onKeydown);
+}
+
 function renderManager() {
   const q = $('dashboardSearch').value.toLowerCase();
   let list = managerCredentials.filter(item => 
@@ -321,7 +377,7 @@ function renderManager() {
   }
 
   if (!list.length) {
-    $('loginsGrid').innerHTML = '<div style="grid-column:1/-1;padding:32px;color:var(--muted);text-align:center;font-size:13px">Không có tài khoản đăng nhập nào.</div>';
+    $('loginsGrid').innerHTML = `<div style="grid-column:1/-1;padding:32px;color:var(--muted);text-align:center;font-size:13px">${l('No logins found.', 'Không có tài khoản đăng nhập nào.')}</div>`;
     return;
   }
   
@@ -336,7 +392,7 @@ function renderManager() {
     
     const title = document.createElement('div');
     title.className = 'card-title';
-    title.textContent = item.title || 'Không tiêu đề';
+    title.textContent = item.title || l('Untitled', 'Không tiêu đề');
     
     const user = document.createElement('div');
     user.className = 'card-user';
@@ -344,9 +400,16 @@ function renderManager() {
     
     const overlay = document.createElement('div');
     overlay.className = 'card-hover-overlay';
-    overlay.textContent = item.otpId ? '🔐 Xem mật khẩu & OTP' : '👁 Xem thông tin';
+    overlay.textContent = item.otpId ? `🔐 ${l('View password & OTP', 'Xem mật khẩu & OTP')}` : `👁 ${l('View details', 'Xem thông tin')}`;
     card.append(icon, title, user, overlay);
     card.onclick = () => openLoginDetail(item);
+    card.oncontextmenu = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const url = getSafeWebUrl(item.url || item.origins?.[0]);
+      if (url) showOpenLinkPopover(card, event.clientX, event.clientY, url);
+    };
+    card.title = l('Click to view details · Right-click to open website', 'Nhấp để xem thông tin · Nhấp chuột phải để mở website');
     return card;
   }));
 }
@@ -356,7 +419,8 @@ function clearLoginDetailTimer() {
   loginDetailTimer = null;
 }
 
-async function copyLoginDetailValue(button, value, label = 'thông tin') {
+async function copyLoginDetailValue(button, value, englishLabel = 'information', vietnameseLabel = 'thông tin') {
+  const label = l(englishLabel, vietnameseLabel);
   const toast = $('loginDetailCopyToast');
   try {
     await navigator.clipboard.writeText(value || '');
@@ -366,7 +430,7 @@ async function copyLoginDetailValue(button, value, label = 'thông tin') {
     }
     toast.textContent = `Đã sao chép ${label}`;
   } catch {
-    toast.textContent = 'Không thể sao chép';
+    toast.textContent = l('Could not copy', 'Không thể sao chép');
     toast.classList.add('error');
   }
   toast.classList.add('show');
@@ -420,11 +484,11 @@ function openLoginDetail(item) {
     $('loginDetailPassword').textContent = visible ? '•'.repeat(Math.max(rawPassword.length, 8)) : rawPassword;
     $('loginDetailPasswordToggle').setAttribute('aria-pressed', String(!visible));
   };
-  $('copyLoginUsername').onclick = () => copyLoginDetailValue($('copyLoginUsername'), item.username, 'tên đăng nhập');
-  $('copyLoginPassword').onclick = () => copyLoginDetailValue($('copyLoginPassword'), rawPassword, 'mật khẩu');
+  $('copyLoginUsername').onclick = () => copyLoginDetailValue($('copyLoginUsername'), item.username, 'username', 'tên đăng nhập');
+  $('copyLoginPassword').onclick = () => copyLoginDetailValue($('copyLoginPassword'), rawPassword, 'password', 'mật khẩu');
   const copyLinkedOtp = async () => {
     if ($('loginDetailOtp').classList.contains('invalid')) return;
-    await copyLoginDetailValue(null, $('loginDetailOtp').textContent.replace(/\s/g, ''), 'mã OTP');
+    await copyLoginDetailValue(null, $('loginDetailOtp').textContent.replace(/\s/g, ''), 'OTP code', 'mã OTP');
   };
   $('loginDetailOtpBlock').onclick = () => { void copyLinkedOtp(); };
   $('loginDetailOtpBlock').onkeydown = event => {
@@ -449,15 +513,15 @@ $('loginDetailModal').onclick = event => {
 };
 
 function securityLabel(level) {
-  return level === 'strong' ? 'Mạnh' : level === 'medium' ? 'Trung bình' : 'Yếu';
+  return level === 'strong' ? l('Strong', 'Mạnh') : level === 'medium' ? l('Medium', 'Trung bình') : l('Weak', 'Yếu');
 }
 
 function securityRecommendation(report) {
-  if (!report.counts.total) return 'Chưa có tài khoản nào để phân tích. Hãy thêm mật khẩu đầu tiên vào Vault.';
-  if (report.counts.weak) return `Ưu tiên thay ${report.counts.weak} mật khẩu yếu bằng mật khẩu dài và duy nhất.`;
-  if (report.counts.reused) return `${report.counts.reused} tài khoản đang dùng lại mật khẩu. Hãy tạo mật khẩu riêng cho từng website.`;
-  if (report.counts.medium) return `Nâng cấp ${report.counts.medium} mật khẩu trung bình lên ít nhất 12–16 ký tự.`;
-  return 'Tuyệt vời! Tất cả mật khẩu đều mạnh và không bị dùng lại.';
+  if (!report.counts.total) return l('No accounts to analyze. Add your first password to the Vault.', 'Chưa có tài khoản nào để phân tích. Hãy thêm mật khẩu đầu tiên vào Vault.');
+  if (report.counts.weak) return lf('Replace {count} weak passwords with long, unique passwords first.', 'Ưu tiên thay {count} mật khẩu yếu bằng mật khẩu dài và duy nhất.', { count: report.counts.weak });
+  if (report.counts.reused) return lf('{count} accounts reuse passwords. Create a unique password for each website.', '{count} tài khoản đang dùng lại mật khẩu. Hãy tạo mật khẩu riêng cho từng website.', { count: report.counts.reused });
+  if (report.counts.medium) return lf('Upgrade {count} medium-strength passwords to at least 12–16 characters.', 'Nâng cấp {count} mật khẩu trung bình lên ít nhất 12–16 ký tự.', { count: report.counts.medium });
+  return l('Excellent! All passwords are strong and unique.', 'Tuyệt vời! Tất cả mật khẩu đều mạnh và không bị dùng lại.');
 }
 
 function renderSecurityTable() {
@@ -502,7 +566,7 @@ function renderSecurityTable() {
     if (item.reused) {
       const reused = document.createElement('span');
       reused.className = 'reuse-badge';
-      reused.textContent = '↻ Dùng lại';
+      reused.textContent = l('↻ Reused', '↻ Dùng lại');
       riskCell.append(reused);
     } else riskCell.textContent = '—';
 
@@ -527,7 +591,7 @@ function renderSecurityCenter() {
   $('securityScore').textContent = overallScore;
   $('securityScoreRing').style.setProperty('--score', overallScore);
   $('securityScoreRing').style.setProperty('--score-color', color);
-  $('securityScoreLabel').textContent = overallScore >= 85 ? 'Bảo vệ rất tốt' : overallScore >= 65 ? 'Mức bảo vệ tốt' : overallScore >= 40 ? 'Cần cải thiện' : 'Rủi ro cao';
+  $('securityScoreLabel').textContent = overallScore >= 85 ? l('Very well protected', 'Bảo vệ rất tốt') : overallScore >= 65 ? l('Well protected', 'Mức bảo vệ tốt') : overallScore >= 40 ? l('Needs improvement', 'Cần cải thiện') : l('High risk', 'Rủi ro cao');
   $('strongCount').textContent = counts.strong;
   $('mediumCount').textContent = counts.medium;
   $('weakCount').textContent = counts.weak;
@@ -619,7 +683,7 @@ $('drawerCancel').onclick = closeDrawer;
 
 $('openUrlBtn').onclick = () => {
   const url = getSafeWebUrl($('editUrl').value);
-  if (!url) return alert('Website phải là một địa chỉ HTTP hoặc HTTPS hợp lệ.');
+  if (!url) return alert(l('Website must be a valid HTTP or HTTPS address.', 'Website phải là một địa chỉ HTTP hoặc HTTPS hợp lệ.'));
   window.open(url, '_blank', 'noopener,noreferrer');
 };
 
@@ -705,7 +769,7 @@ function renderNotes() {
     card.className = 'vault-item-card note-item-card';
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
-    card.setAttribute('aria-label', `Xem ghi chú ${item.title || 'không tiêu đề'}`);
+    card.setAttribute('aria-label', `${l('View note', 'Xem ghi chú')} ${item.title || l('untitled', 'không tiêu đề')}`);
     card.onclick = () => openNoteDetail(item);
     card.onkeydown = event => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -770,8 +834,8 @@ function openNoteDetail(item) {
   modal.classList.remove('hidden');
   $('noteDetailCopy').onclick = async () => {
     await navigator.clipboard.writeText(item.notes || '');
-    $('noteDetailCopy').textContent = '✓ Đã sao chép';
-    setTimeout(() => { $('noteDetailCopy').textContent = '📋 Sao chép nội dung'; }, 1500);
+    $('noteDetailCopy').textContent = l('✓ Copied', '✓ Đã sao chép');
+    setTimeout(() => { $('noteDetailCopy').textContent = l('📋 Copy content', '📋 Sao chép nội dung'); }, 1500);
   };
 }
 
@@ -851,7 +915,7 @@ function renderCards() {
     card.className = 'vault-item-card payment-item-card';
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
-    card.setAttribute('aria-label', `Xem thẻ ${item.title || 'thanh toán'}`);
+    card.setAttribute('aria-label', `${l('View card', 'Xem thẻ')} ${item.title || l('payment', 'thanh toán')}`);
     card.onclick = () => openCardDetail(item);
     card.onkeydown = event => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -881,19 +945,34 @@ function renderCards() {
 
     const meta = document.createElement('div');
     meta.style.cssText = 'display:flex; justify-content:space-between; font-size:11px; color:#94a3b8;';
-    meta.innerHTML = `<span>Chủ thẻ: <strong style="color:#e2e8f0">${item.cardholderName || '—'}</strong></span><span>Hạn: <strong style="color:#e2e8f0">${item.expMonth || '--'}/${item.expYear || '--'}</strong></span>`;
+
+    const cardholderMeta = document.createElement('span');
+    cardholderMeta.append(l('Cardholder: ', 'Chủ thẻ: '));
+    const cardholderValue = document.createElement('strong');
+    cardholderValue.style.color = '#e2e8f0';
+    cardholderValue.textContent = item.cardholderName || '—';
+    cardholderMeta.append(cardholderValue);
+
+    const expiryMeta = document.createElement('span');
+    expiryMeta.append(l('Expires: ', 'Hạn: '));
+    const expiryValue = document.createElement('strong');
+    expiryValue.style.color = '#e2e8f0';
+    expiryValue.textContent = `${item.expMonth || '--'}/${item.expYear || '--'}`;
+    expiryMeta.append(expiryValue);
+
+    meta.append(cardholderMeta, expiryMeta);
 
     const actions = document.createElement('div');
     actions.style.cssText = 'display:flex; gap:8px; margin-top:4px;';
 
     const copyNumBtn = document.createElement('button');
     copyNumBtn.style.cssText = 'flex:1; padding:6px; border-radius:6px; border:0; background:rgba(255,255,255,0.15); color:#fff; font-size:11px; font-weight:600; cursor:pointer;';
-    copyNumBtn.textContent = '📋 Copy số thẻ';
+    copyNumBtn.textContent = l('📋 Copy card number', '📋 Sao chép số thẻ');
     copyNumBtn.onclick = event => {
       event.stopPropagation();
       navigator.clipboard.writeText(rawNum);
-      copyNumBtn.textContent = '✓ Đã copy';
-      setTimeout(() => { copyNumBtn.textContent = '📋 Sao chép'; }, 1500);
+      copyNumBtn.textContent = l('✓ Copied', '✓ Đã sao chép');
+      setTimeout(() => { copyNumBtn.textContent = l('📋 Copy', '📋 Sao chép'); }, 1500);
     };
 
     const editBtn = document.createElement('button');
@@ -1075,7 +1154,9 @@ function renderTrash() {
 
     const date = document.createElement('span');
     date.className = 'trash-date';
-    date.textContent = `Đã xóa ${new Date(item.deletedAt).toLocaleDateString('vi-VN')}`;
+    date.textContent = lf('Deleted {date}', 'Đã xóa {date}', {
+      date: new Date(item.deletedAt).toLocaleDateString(activeLanguage === 'vi' ? 'vi-VN' : 'en-US')
+    });
 
     const content = document.createElement('div');
     content.className = 'trash-content';
@@ -1098,7 +1179,7 @@ function renderTrash() {
     restoreBtn.onclick = async () => {
       const accepted = await confirmAction({
         title: 'Khôi phục thông tin?',
-        message: `Bạn có đồng ý khôi phục ${trashTypeLabel(type)} này không?`,
+        message: lf('Restore this {item}?', 'Bạn có đồng ý khôi phục {item} này không?', { item: trashTypeLabel(type) }),
         acceptText: 'Đồng ý khôi phục',
         cancelText: 'Không khôi phục',
         tone: 'restore'
@@ -1123,7 +1204,7 @@ function renderTrash() {
     deleteBtn.onclick = async () => {
       const accepted = await confirmAction({
         title: 'Xóa vĩnh viễn?',
-        message: `Dữ liệu ${trashTypeLabel(type)} sẽ không thể khôi phục sau khi xóa.`,
+        message: lf('This {item} cannot be recovered after deletion.', 'Dữ liệu {item} sẽ không thể khôi phục sau khi xóa.', { item: trashTypeLabel(type) }),
         acceptText: 'Đồng ý xóa',
         cancelText: 'Không xóa',
         tone: 'delete'
@@ -1148,7 +1229,13 @@ function renderTrash() {
 }
 
 function trashTypeLabel(type) {
-  return ({ card: 'thẻ thanh toán', note: 'ghi chú', credential: 'tài khoản', login: 'tài khoản', otp: 'mã OTP' })[type] || 'thông tin';
+  return ({
+    card: l('payment card', 'thẻ thanh toán'),
+    note: l('note', 'ghi chú'),
+    credential: l('login', 'tài khoản'),
+    login: l('login', 'tài khoản'),
+    otp: l('OTP code', 'mã OTP')
+  })[type] || l('item', 'thông tin');
 }
 
 if ($('emptyTrashBtn')) {
@@ -1252,13 +1339,13 @@ $('csvFile').onchange = async event => {
     return;
   }
   if (file.size > MAX_CSV_FILE_BYTES) {
-    $('csvFileName').textContent = `${file.name} · quá lớn`;
+    $('csvFileName').textContent = `${file.name} · ${l('too large', 'quá lớn')}`;
     $('importResult').style.color = '#e11d48';
-    $('importResult').textContent = 'Tệp CSV vượt quá giới hạn 8 MiB. Hãy chọn tệp nhỏ hơn.';
+    $('importResult').textContent = l('The CSV file exceeds the 8 MiB limit. Choose a smaller file.', 'Tệp CSV vượt quá giới hạn 8 MiB. Hãy chọn tệp nhỏ hơn.');
     event.target.value = '';
     return;
   }
-  $('csvFileName').textContent = `${file.name} · đang kiểm tra…`;
+  $('csvFileName').textContent = `${file.name} · ${l('checking…', 'đang kiểm tra…')}`;
   try {
     const text = await file.text();
     if (generation !== csvReadGeneration) return;
@@ -1271,12 +1358,12 @@ $('csvFile').onchange = async event => {
     $('importButton').disabled = importValidCount === 0;
     $('importResult').style.color = importValidCount ? 'var(--apple-green)' : '#e11d48';
     $('importResult').textContent = importValidCount
-      ? `Đã kiểm tra: ${importValidCount} tài khoản hợp lệ, ${response.preview?.duplicates || 0} mục trùng.`
-      : 'Tệp CSV không có tài khoản hợp lệ để nhập.';
+      ? lf('Checked: {valid} valid accounts, {duplicates} duplicates.', 'Đã kiểm tra: {valid} tài khoản hợp lệ, {duplicates} mục trùng.', { valid: importValidCount, duplicates: response.preview?.duplicates || 0 })
+      : l('The CSV file has no valid accounts to import.', 'Tệp CSV không có tài khoản hợp lệ để nhập.');
   } catch (error) {
     if (generation !== csvReadGeneration) return;
     csvText = '';
-    $('csvFileName').textContent = `${file.name} · không hợp lệ`;
+    $('csvFileName').textContent = `${file.name} · ${l('invalid', 'không hợp lệ')}`;
     $('importResult').style.color = '#e11d48';
     $('importResult').textContent = error?.message || 'Không thể đọc tệp CSV.';
     event.target.value = '';
@@ -1287,7 +1374,7 @@ $('importButton').onclick = async () => {
   if (!csvText || !importValidCount) return;
   const accepted = await confirmAction({
     title: 'Nhập dữ liệu CSV?',
-    message: `Bạn có đồng ý nhập ${importValidCount} tài khoản hợp lệ vào Vault không?`,
+    message: lf('Import {count} valid accounts into the Vault?', 'Bạn có đồng ý nhập {count} tài khoản hợp lệ vào Vault không?', { count: importValidCount }),
     acceptText: 'Đồng ý nhập CSV',
     cancelText: 'Không nhập',
     tone: 'restore'
@@ -1298,12 +1385,12 @@ $('importButton').onclick = async () => {
   button.disabled = true;
   button.textContent = 'Đang nhập…';
   result.style.color = 'var(--apple-accent)';
-  result.textContent = `Đang mã hóa và nhập ${importValidCount} tài khoản…`;
+  result.textContent = lf('Encrypting and importing {count} accounts…', 'Đang mã hóa và nhập {count} tài khoản…', { count: importValidCount });
   try {
     const response = await send({ type: 'IMPORT_COMMIT', csv: csvText });
     if (response?.ok === false) throw new Error(response.error || 'Không thể nhập CSV.');
     result.style.color = 'var(--apple-green)';
-    result.textContent = `Đã nhập/cập nhật ${response.imported ?? 0} tài khoản.`;
+    result.textContent = lf('Imported or updated {count} accounts.', 'Đã nhập/cập nhật {count} tài khoản.', { count: response.imported ?? 0 });
     $('csvFile').value = '';
     $('csvFileName').textContent = 'Chưa chọn tệp';
     csvText = '';
@@ -1332,7 +1419,7 @@ $('exportButton').onclick = async () => {
   }
   const accepted = await confirmAction({
     title: 'Xuất dữ liệu CSV?',
-    message: 'CSV chứa mật khẩu dạng rõ. Chỉ dùng tệp để chuyển sang password manager và không mở bằng ứng dụng bảng tính.',
+    message: l('CSV contains clear-text passwords. Use it only to move data to a password manager and do not open it in a spreadsheet app.', 'CSV chứa mật khẩu dạng rõ. Chỉ dùng tệp để chuyển sang password manager và không mở bằng ứng dụng bảng tính.'),
     acceptText: 'Đồng ý xuất CSV',
     cancelText: 'Không xuất',
     tone: 'restore'
@@ -1349,7 +1436,7 @@ $('exportButton').onclick = async () => {
     }
     await downloadText(response.csv, `aegis-vault-${dateStamp()}.csv`, 'text/csv;charset=utf-8');
     result.style.color = 'var(--apple-green)';
-    result.textContent = `Đã xuất ${response.count ?? 0} tài khoản.`;
+    result.textContent = lf('Exported {count} accounts.', 'Đã xuất {count} tài khoản.', { count: response.count ?? 0 });
     $('exportPassword').value = '';
   } catch (error) {
     result.style.color = '#e11d48';
@@ -1404,8 +1491,14 @@ function confirmAction({
   });
 }
 
-function confirmDelete(message = 'Bạn có đồng ý xóa thông tin này không?') {
-  return confirmAction({ title: 'Xóa thông tin?', message, acceptText: 'Đồng ý xóa', cancelText: 'Không xóa', tone: 'delete' });
+function confirmDelete(message = null) {
+  return confirmAction({
+    title: l('Delete item?', 'Xóa thông tin?'),
+    message: message || l('Do you want to delete this item?', 'Bạn có đồng ý xóa thông tin này không?'),
+    acceptText: l('Delete', 'Đồng ý xóa'),
+    cancelText: l('Do not delete', 'Không xóa'),
+    tone: 'delete'
+  });
 }
 function dateStamp(){return new Date().toISOString().slice(0,10);}
 async function downloadText(text, name, type = 'text/plain;charset=utf-8') {
@@ -1426,11 +1519,11 @@ async function downloadText(text, name, type = 'text/plain;charset=utf-8') {
 }
 
 function formatBackupCounts(counts) {
-  if (typeof counts === 'number') return `${counts} mục`;
-  if (!counts || typeof counts !== 'object') return 'dữ liệu';
+  if (typeof counts === 'number') return lf('{count} items', '{count} mục', { count: counts });
+  if (!counts || typeof counts !== 'object') return l('data', 'dữ liệu');
   const credentials = counts.credentials ?? counts.logins ?? counts.items ?? 0;
   const otp = counts.otpAccounts ?? counts.otp ?? 0;
-  return `${credentials} tài khoản và ${otp} mã OTP`;
+  return lf('{credentials} accounts and {otp} OTP codes', '{credentials} tài khoản và {otp} mã OTP', { credentials, otp });
 }
 
 $('backupExportButton').onclick = async () => {
@@ -1462,7 +1555,7 @@ $('backupExportButton').onclick = async () => {
     : JSON.stringify(response.backup, null, 2);
   await downloadText(text, `aegis-vault-backup-${dateStamp()}.json`, 'application/json;charset=utf-8');
   result.style.color = 'var(--apple-green)';
-  result.textContent = `Đã tải backup gồm ${formatBackupCounts(response.counts)}.`;
+  result.textContent = lf('Downloaded a backup containing {counts}.', 'Đã tải backup gồm {counts}.', { counts: formatBackupCounts(response.counts) });
   $('backupExportPassword').value = '';
 };
 
@@ -1499,9 +1592,9 @@ $('backupFile').onchange = async event => {
   $('backupImportResult').textContent = '';
   if (!file) return;
   if (file.size > MAX_BACKUP_FILE_BYTES) {
-    $('backupFileName').textContent = `${file.name} · quá lớn`;
+    $('backupFileName').textContent = `${file.name} · ${l('too large', 'quá lớn')}`;
     $('backupImportResult').style.color = '#e11d48';
-    $('backupImportResult').textContent = 'Tệp backup vượt quá giới hạn 10 MiB. Hãy chọn tệp nhỏ hơn.';
+    $('backupImportResult').textContent = l('The backup file exceeds the 10 MiB limit. Choose a smaller file.', 'Tệp backup vượt quá giới hạn 10 MiB. Hãy chọn tệp nhỏ hơn.');
     event.target.value = '';
     return;
   }
@@ -1539,7 +1632,7 @@ $('backupImportButton').onclick = async () => {
   }
   const accepted = await confirmAction({
     title: 'Khôi phục Vault?',
-    message: 'Dữ liệu trong tệp sẽ thay thế Vault hiện tại rồi được đồng bộ lại. Bạn có đồng ý tiếp tục không?',
+    message: l('The file data will replace the current Vault and then sync again. Do you want to continue?', 'Dữ liệu trong tệp sẽ thay thế Vault hiện tại rồi được đồng bộ lại. Bạn có đồng ý tiếp tục không?'),
     acceptText: 'Đồng ý khôi phục',
     cancelText: 'Không khôi phục',
     tone: 'restore'
@@ -1560,7 +1653,7 @@ $('backupImportButton').onclick = async () => {
       throw new Error(response.error || 'Không thể khôi phục backup.');
     }
     result.style.color = 'var(--apple-green)';
-    result.textContent = `Đã khôi phục ${formatBackupCounts(response?.counts)}.`;
+    result.textContent = lf('Restored {counts}.', 'Đã khôi phục {counts}.', { counts: formatBackupCounts(response?.counts) });
     $('backupImportPassword').value = '';
     $('backupFile').value = '';
     $('backupFileName').textContent = 'Chưa chọn tệp';
@@ -1588,13 +1681,13 @@ $('otpTextFile').onchange = async event => {
     return;
   }
   if (file.size > MAX_OTP_FILE_BYTES) {
-    $('otpTextFileName').textContent = `${file.name} · quá lớn`;
+    $('otpTextFileName').textContent = `${file.name} · ${l('too large', 'quá lớn')}`;
     $('otpImportResult').style.color = '#e11d48';
-    $('otpImportResult').textContent = 'Tệp OTP vượt quá giới hạn 4 MiB. Hãy chọn tệp nhỏ hơn.';
+    $('otpImportResult').textContent = l('The OTP file exceeds the 4 MiB limit. Choose a smaller file.', 'Tệp OTP vượt quá giới hạn 4 MiB. Hãy chọn tệp nhỏ hơn.');
     event.target.value = '';
     return;
   }
-  $('otpTextFileName').textContent = `${file.name} · đang kiểm tra…`;
+  $('otpTextFileName').textContent = `${file.name} · ${l('checking…', 'đang kiểm tra…')}`;
   try {
     const text = await file.text();
     if (generation !== otpReadGeneration) return;
@@ -1607,12 +1700,12 @@ $('otpTextFile').onchange = async event => {
     $('otpImportBtn').disabled = otpImportValidCount === 0;
     $('otpImportResult').style.color = otpImportValidCount ? 'var(--apple-green)' : '#e11d48';
     $('otpImportResult').textContent = otpImportValidCount
-      ? `Đã kiểm tra: ${otpImportValidCount} mã OTP hợp lệ, ${response.preview?.duplicates || 0} mục trùng.`
-      : 'Tệp không có mã OTP hợp lệ để nhập.';
+      ? lf('Checked: {valid} valid OTP codes, {duplicates} duplicates.', 'Đã kiểm tra: {valid} mã OTP hợp lệ, {duplicates} mục trùng.', { valid: otpImportValidCount, duplicates: response.preview?.duplicates || 0 })
+      : l('The file has no valid OTP codes to import.', 'Tệp không có mã OTP hợp lệ để nhập.');
   } catch (error) {
     if (generation !== otpReadGeneration) return;
     otpText = '';
-    $('otpTextFileName').textContent = `${file.name} · không hợp lệ`;
+    $('otpTextFileName').textContent = `${file.name} · ${l('invalid', 'không hợp lệ')}`;
     $('otpImportResult').style.color = '#e11d48';
     $('otpImportResult').textContent = error?.message || 'Không thể đọc tệp OTP.';
     event.target.value = '';
@@ -1622,7 +1715,7 @@ $('otpImportBtn').onclick = async () => {
   if (!otpText || !otpImportValidCount) return;
   const accepted = await confirmAction({
     title: 'Nhập mã OTP?',
-    message: `Bạn có đồng ý nhập ${otpImportValidCount} mã OTP hợp lệ vào Vault không?`,
+    message: lf('Import {count} valid OTP codes into the Vault?', 'Bạn có đồng ý nhập {count} mã OTP hợp lệ vào Vault không?', { count: otpImportValidCount }),
     acceptText: 'Đồng ý nhập OTP',
     cancelText: 'Không nhập',
     tone: 'restore'
@@ -1639,7 +1732,14 @@ $('otpImportBtn').onclick = async () => {
     if (response?.ok === false) throw new Error(response.error || 'Không thể nhập OTP.');
     const skipped = Math.max(0, otpImportValidCount - (response.imported || 0));
     result.style.color = 'var(--apple-green)';
-    result.textContent = `Đã nhập ${response.imported ?? 0} mã OTP.${skipped ? ` Bỏ qua ${skipped} mã đã tồn tại.` : ''}`;
+    result.textContent = lf(
+      'Imported {count} OTP codes.{skipped}',
+      'Đã nhập {count} mã OTP.{skipped}',
+      {
+        count: response.imported ?? 0,
+        skipped: skipped ? lf(' Skipped {count} existing codes.', ' Bỏ qua {count} mã đã tồn tại.', { count: skipped }) : ''
+      }
+    );
     $('otpTextFile').value = '';
     $('otpTextFileName').textContent = 'Chưa chọn tệp';
     otpText = '';
@@ -1666,7 +1766,7 @@ $('otpExportBtn').onclick = async () => {
   }
   const accepted = await confirmAction({
     title: 'Xuất mã OTP?',
-    message: 'Tệp TXT chứa secret có thể tạo mã đăng nhập. Hãy giữ tệp ở nơi an toàn.',
+    message: l('The TXT file contains secrets that can generate login codes. Keep it in a safe place.', 'Tệp TXT chứa secret có thể tạo mã đăng nhập. Hãy giữ tệp ở nơi an toàn.'),
     acceptText: 'Đồng ý xuất OTP',
     cancelText: 'Không xuất',
     tone: 'restore'
@@ -1683,7 +1783,7 @@ $('otpExportBtn').onclick = async () => {
     }
     await downloadText(response.text, `aegis-authenticator-${dateStamp()}.txt`, 'text/plain;charset=utf-8');
     result.style.color = 'var(--apple-green)';
-    result.textContent = `Đã xuất ${response.count ?? 0} mã OTP.`;
+    result.textContent = lf('Exported {count} OTP codes.', 'Đã xuất {count} mã OTP.', { count: response.count ?? 0 });
     $('otpExportPassword').value = '';
   } catch (error) {
     result.style.color = '#e11d48';
@@ -1822,7 +1922,7 @@ $('dropdownChangePassword').onclick = (e) => {
 $('dropdownSignOut').onclick = async (e) => {
   e.stopPropagation();
   $('userDropdown').classList.add('hidden');
-  if (confirm('Bạn có chắc chắn muốn đăng xuất tài khoản Google hiện tại?')) {
+  if (confirm(l('Sign out of the current Google account?', 'Bạn có chắc chắn muốn đăng xuất tài khoản Google hiện tại?'))) {
     await send({ type: 'GOOGLE_SIGN_OUT' });
     location.reload();
   }

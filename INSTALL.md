@@ -1,89 +1,159 @@
-# Cài đặt Aegis Vault trên máy tính khác
+# Cài đặt Aegis Vault
 
-Aegis Vault không phụ thuộc ổ đĩa, tên người dùng Windows hoặc thư mục cố định. Thư mục extension có thể đặt ở bất kỳ vị trí nào, nhưng không nên di chuyển sau khi đã tải vào Chrome.
+Aegis Vault hỗ trợ Google Chrome 106 trở lên và Microsoft Edge Chromium tương đương. Extension sử dụng Firebase Authentication để đăng nhập Google và Cloud Firestore để đồng bộ vault đã mã hóa.
 
-Yêu cầu Google Chrome 106 trở lên hoặc Microsoft Edge dùng Chromium tương đương.
+## 1. Chuẩn bị Firebase
 
-## Cài từ thư mục mã nguồn
+### Tạo Web App
 
-1. Sao chép toàn bộ thư mục Aegis Vault sang máy mới.
-2. Mở `chrome://extensions/` trên Chrome hoặc `edge://extensions/` trên Edge.
-3. Bật **Chế độ dành cho nhà phát triển**.
-4. Chọn **Tải tiện ích đã giải nén**.
-5. Chọn thư mục có tệp `manifest.json`.
+1. Tạo hoặc mở một Firebase project.
+2. Thêm một Web App trong Project Settings.
+3. Sao chép cấu hình Web App.
+4. Tạo file local:
 
-Sau mỗi lần cập nhật mã nguồn, mở lại `chrome://extensions/` và bấm **Tải lại** trên thẻ Aegis Vault.
+   ```powershell
+   Copy-Item src/auth/firebase-config.example.js src/auth/firebase-config.js
+   ```
 
-## Tạo gói portable
+5. Điền cấu hình thật vào `src/auth/firebase-config.js`.
 
-Chạy từ PowerShell tại thư mục dự án:
+File này bị Git bỏ qua và không nên commit.
+
+### Bật Authentication
+
+1. Mở **Firebase Console → Authentication → Sign-in method**.
+2. Bật nhà cung cấp Google.
+3. Chọn email hỗ trợ của project.
+
+### Tạo Cloud Firestore
+
+Tạo Firestore database và áp dụng rules giới hạn dữ liệu theo Firebase UID:
+
+```text
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/vault/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+    }
+  }
+}
+```
+
+Vault được lưu theo cấu trúc:
+
+```text
+users/{uid}/vault/snapshot
+users/{uid}/vault/snapshot/chunks/{commitId}_{index}
+```
+
+Document `snapshot` chứa metadata của commit. Envelope mã hóa được chia thành các chunk nhỏ để không vượt giới hạn kích thước document của Firestore.
+
+## 2. Cấu hình Google OAuth
+
+Aegis dùng OAuth Web Client với `chrome.identity.launchWebAuthFlow` trên cả Chrome và Edge.
+
+Client ID được khai báo tại:
+
+```json
+{
+  "oauth2": {
+    "client_id": "YOUR_WEB_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": ["openid", "email", "profile"]
+  }
+}
+```
+
+Redirect URI được tạo bằng:
+
+```js
+chrome.identity.getRedirectURL('oauth2')
+```
+
+Kết quả có dạng:
+
+```text
+https://<extension-id>.chromiumapp.org/oauth2
+```
+
+Thêm chính xác URI này vào **Google Cloud Console → Google Auth Platform → Clients → Authorized redirect URIs**.
+
+Extension ID hiện được xác định từ public `key` trong `manifest.json`. Không thay public key nếu muốn giữ nguyên ID và redirect URI.
+
+Không đưa private key `.pem` vào repository hoặc package.
+
+## 3. Load unpacked
+
+1. Mở `chrome://extensions/` hoặc `edge://extensions/`.
+2. Bật **Developer mode**.
+3. Chọn **Load unpacked**.
+4. Chọn thư mục dự án chứa `manifest.json`.
+5. Sau mỗi lần sửa mã nguồn, bấm **Reload** trên thẻ Aegis Vault.
+
+Không cần chạy build hoặc tạo ZIP khi đang phát triển.
+
+## 4. Kiểm tra đăng nhập
+
+1. Mở popup Aegis Vault.
+2. Chọn đăng nhập Google.
+3. Xác nhận đúng tài khoản Google.
+4. Kiểm tra Firebase Authentication đã tạo user.
+5. Tạo vault thử nghiệm.
+6. Kiểm tra Firestore có document dưới `users/{uid}/vault/snapshot`.
+
+OAuth chỉ yêu cầu ID token, email và profile. Aegis xác minh `state` của phản hồi OAuth trước khi trao đổi ID token với Firebase Authentication.
+
+## 5. Kiểm tra đồng bộ
+
+1. Tạo vault và thêm một tài khoản thử nghiệm.
+2. Chờ trạng thái đồng bộ hoàn tất.
+3. Reload extension và mở lại vault.
+4. Thử trên trình duyệt hoặc profile thứ hai với cùng tài khoản Google.
+5. Sửa dữ liệu trên hai profile để kiểm tra conflict handling.
+
+Firestore write sử dụng server-side precondition:
+
+- `currentDocument.exists=false` khi tạo snapshot mới.
+- `currentDocument.updateTime=<version>` khi cập nhật snapshot.
+
+Nếu phiên bản cloud đã đổi, Aegis không ghi đè mù mà tải lại snapshot và giữ pending mutations để hợp nhất hoặc retry.
+
+## 6. Token và đăng xuất
+
+- Firebase ID token và refresh token được lưu trong Chrome Storage với access level `TRUSTED_CONTEXTS`.
+- Token được gắn với Firebase UID của user hiện tại.
+- Token hết hạn không được tái sử dụng nếu refresh thất bại.
+- Nút đăng xuất xóa user và token khỏi local/session storage.
+
+Nếu không đăng nhập lại được:
+
+1. Kiểm tra OAuth Client ID.
+2. Kiểm tra redirect URI theo Extension ID hiện tại.
+3. Kiểm tra Google provider trong Firebase Authentication.
+4. Kiểm tra `apiKey` và `projectId` trong `firebase-config.js`.
+5. Kiểm tra Firebase Authentication và Firestore API chưa bị chặn bởi quota hoặc API restrictions.
+
+## 7. Chạy kiểm thử
 
 ```powershell
-.\scripts\package-extension.ps1
+npm.cmd run check
+npm.cmd test
 ```
 
-Giải nén `dist/aegis-vault.zip` trên máy khác rồi tải thư mục đã giải nén vào Chrome. Script đóng gói sẽ dừng nếu phát hiện tệp khóa riêng `.pem` hoặc `.key`.
+Chỉ đóng gói sau khi toàn bộ test và kiểm thử Chrome/Edge hoàn tất.
 
-## Google OAuth trên Chrome và Edge
+## 8. Đóng gói khi phát hành
 
-Aegis Vault dùng `chrome.identity.launchWebAuthFlow` trên cả Chrome và Edge với OAuth Web Client trong `manifest.json`. Extension ID hiện tại trên Chrome là:
+```powershell
+npm.cmd run build
+```
+
+Kết quả:
 
 ```text
-dakldaoginnhlfffbcninmmcjepopkgg
+dist/aegis-vault/
+dist/aegis-vault.zip
 ```
 
-Chrome tạo Extension ID từ public key của extension. Vì `manifest.json` hiện chưa chứa trường `key`, bản **Load unpacked** ở máy khác có thể nhận ID mới và Google đăng nhập sẽ không hoạt động với OAuth Client hiện tại.
-
-Để phát hành ổn định, dùng một trong hai cách:
-
-1. Phát hành qua Chrome Web Store để cùng một extension giữ nguyên ID trên mọi máy.
-2. Với cài đặt nội bộ, thêm đúng public key gốc vào trường `key` của `manifest.json` trước khi đóng gói.
-
-Không đưa private key `.pem` vào mã nguồn hoặc gói ZIP. Không thể tạo một cặp khóa mới mà vẫn giữ nguyên ID cũ.
-
-### Cấu hình Microsoft Edge
-
-Microsoft Edge không hỗ trợ `chrome.identity.getAuthToken`, còn API đó trên Chrome yêu cầu OAuth client loại Chrome Extension. Để dùng chung một OAuth Web Client, Aegis từ 0.3.1 dùng `chrome.identity.launchWebAuthFlow` thống nhất trên cả hai trình duyệt.
-
-OAuth Client ID hiện có trong `manifest.json` đã là loại **Web application**. Không tạo Client ID mới và không yêu cầu người dùng nhập cấu hình theo từng tài khoản.
-
-1. Mở OAuth client hiện tại trong **Google Cloud Console → Google Auth Platform → Clients**.
-2. Thêm chính xác hai URI sau vào **Authorized redirect URIs**:
-
-```text
-https://dakldaoginnhlfffbcninmmcjepopkgg.chromiumapp.org/oauth2
-https://afdjllbghpnclbhipjbjohhdeiapicnc.chromiumapp.org/oauth2
-```
-
-3. Lưu OAuth client.
-4. Tải lại extension trên Edge, mở popup Aegis và đăng nhập Gmail cần quản lý.
-
-Mỗi Gmail có vùng Drive AppData riêng. Đăng nhập Gmail nào thì Aegis chỉ quản lý vault thuộc Gmail đó; cùng một Gmail trên Chrome và Edge sẽ thấy cùng vault. Nếu Edge Extension ID thay đổi sau khi tải lại từ thư mục khác, redirect URI cũng thay đổi và phải được cập nhật trên Google Cloud.
-
-## Đăng nhập lại sau khi đóng trình duyệt
-
-Sau lần cấp quyền đầu tiên, cả Chrome và Edge chỉ giữ access token ngắn hạn trong bộ nhớ phiên và tự xin lại token ở chế độ im lặng qua phiên Google của trình duyệt. Khi mở lại:
-
-1. Hồ sơ trình duyệt hoặc phiên Google trên `accounts.google.com` phải vẫn đăng nhập cùng tài khoản.
-2. Người dùng không được bấm **Đăng xuất** trong Aegis Vault hoặc thu hồi quyền ứng dụng.
-3. Extension ID phải giữ nguyên.
-4. Chỉ cần nhập lại mật khẩu chính để mở vault.
-
-Nếu Chrome vẫn yêu cầu đăng nhập Google lại, kiểm tra trước tiên xem Extension ID có thay đổi sau khi tải lại extension hay không. Nếu Edge yêu cầu kết nối lại, kiểm tra Web Client ID, redirect URI và cookie phiên Google; không bật chế độ xóa toàn bộ cookie khi đóng Edge.
-
-## Đồng bộ và khôi phục dữ liệu
-
-Trên máy mới:
-
-1. Đăng nhập đúng tài khoản Google đã sở hữu vault.
-2. Cấp quyền Google Drive AppData khi Chrome hỏi.
-3. Chờ trạng thái đồng bộ hoàn tất.
-4. Nhập mật khẩu chính của vault.
-
-Nếu Drive chưa có bản dữ liệu, Aegis Vault sẽ giữ vault local và yêu cầu mở khóa trước khi tải lên. Nếu local và Drive là hai nhánh dữ liệu khác nhau, trang **Quản lý** sẽ yêu cầu chọn **Giữ bản trên máy** hoặc **Dùng bản trên Drive**; extension không tự ghi đè âm thầm.
-
-Khi chọn **Dùng bản trên Drive**, Aegis kiểm tra lại phiên bản Drive ngay trước khi thay thế. Nếu mật khẩu của hai bản khác nhau, bản local cũ được giữ nguyên ở dạng mã hóa và có thể tải xuống tại **Quản lý → Cài đặt**; cần mật khẩu chính cũ để khôi phục tệp đó.
-
-Có thể khôi phục bằng tệp backup mã hóa từ trang **Quản lý**. Backup chỉ được chấp nhận sau khi kiểm tra cấu trúc, giải mã đúng mật khẩu và xác minh vault thuộc đúng tài khoản Google.
-
-Mật khẩu chính không được lưu trên Google Drive và không thể khôi phục nếu bị quên.
+Script đóng gói dừng nếu phát hiện private key `.pem` hoặc `.key`.
