@@ -22,10 +22,11 @@ test('content script keeps autofill available without a per-site switch', async 
   assert.doesNotMatch(source, /IS_EXCLUDED|AEGIS_SITE_ACCESS_CHANGED/);
 });
 
-test('autofill icon stays pinned inside the password field during animated layouts', async () => {
+test('compact autofill icon stays pinned inside password-only fields and outside paired usernames', async () => {
   const source = await readFile(new URL('../src/content/content.js', import.meta.url), 'utf8');
-  assert.match(source, /const iconSize = 28/);
+  assert.match(source, /const iconSize = 20/);
   assert.match(source, /rect\.right - iconSize - inset/);
+  assert.match(source, /const rightOutside = rect\.right \+ outsideGap/);
   assert.match(source, /performance\.now\(\) < positionTrackingUntil/);
   assert.match(source, /new MutationObserver\(\(\) => \{\s*scheduleWire\(\);\s*trackPosition\(\);/);
   assert.match(source, /logo\.src = chrome\.runtime\.getURL\('src\/ui\/logo-48\.png'\)/);

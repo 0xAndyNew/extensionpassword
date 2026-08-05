@@ -31,8 +31,8 @@
     .icon {
       position: fixed;
       z-index: 2;
-      width: 28px;
-      height: 28px;
+      width: 20px;
+      height: 20px;
       margin: 0;
       padding: 0;
       border: 0;
@@ -46,8 +46,8 @@
     }
     .icon img {
       display: block;
-      width: 28px;
-      height: 28px;
+      width: 20px;
+      height: 20px;
       object-fit: contain;
       pointer-events: none;
     }
@@ -452,6 +452,28 @@
     return parts.filter(Boolean).join(' ').toLowerCase();
   }
 
+  function isLikelyUsernameField(input) {
+    if (!(input instanceof HTMLInputElement) || !isVisible(input)) return false;
+    const type = String(input.type || 'text').toLowerCase();
+    if (!['text', 'email', 'tel'].includes(type)) return false;
+
+    const tokens = autocompleteTokens(input);
+    if (
+      tokens.includes('new-password')
+      || tokens.includes('current-password')
+      || tokens.includes('one-time-code')
+    ) return false;
+
+    const descriptor = usernameDescriptor(input);
+    const positive = /(?:user(?:name|id)?|login|sign.?in|e-?mail|account|identifier|phone|mobile|skype|tài\s*khoản|tên\s*đăng\s*nhập)/i;
+    const negative = /(?:search|filter|captcha|otp|token|verification|password|passcode|coupon|promo)/i;
+    if (negative.test(descriptor)) return false;
+    return tokens.includes('username')
+      || tokens.includes('email')
+      || type === 'email'
+      || positive.test(descriptor);
+  }
+
   function usernameCandidateScore(input, passwordInput) {
     if (!(input instanceof HTMLInputElement) || input === passwordInput || !isVisible(input)) {
       return Number.NEGATIVE_INFINITY;
@@ -512,6 +534,49 @@
     return candidates[0]?.score > 0 ? candidates[0].input : null;
   }
 
+  function findPairedPasswordField(usernameInput) {
+    const candidates = getPasswordFields().filter(input => (
+      isVisible(input) && findUsernameField(input) === usernameInput
+    ));
+    return candidates.find(input => autocompleteTokens(input).includes('current-password'))
+      || candidates.find(input => !autocompleteTokens(input).includes('new-password'))
+      || candidates[0]
+      || null;
+  }
+
+  function collectPageIdentityCandidates(passwordInput) {
+    const ranking = globalThis.AegisSuggestionRanking;
+    if (!ranking?.extractIdentityCandidates) return [];
+
+    const regions = [];
+    const seen = new Set();
+    const addRegion = element => {
+      if (!element || seen.has(element)) return;
+      seen.add(element);
+      regions.push(element);
+    };
+    addRegion(passwordInput.form);
+    let ancestor = passwordInput.parentElement;
+    for (let depth = 0; ancestor && depth < 8; depth += 1, ancestor = ancestor.parentElement) {
+      addRegion(ancestor);
+    }
+    addRegion(document.body);
+
+    for (const region of regions) {
+      const sources = [region.innerText || ''];
+      for (const element of region.querySelectorAll('[data-email], [data-identifier], [aria-label]')) {
+        sources.push(
+          element.getAttribute('data-email') || '',
+          element.getAttribute('data-identifier') || '',
+          element.getAttribute('aria-label') || ''
+        );
+      }
+      const identities = ranking.extractIdentityCandidates(sources.join('\n'));
+      if (identities.length) return identities;
+    }
+    return [];
+  }
+
   function collectIdentityHints(passwordInput, credentials) {
     const ranking = globalThis.AegisSuggestionRanking;
     if (!ranking) return [];
@@ -524,6 +589,15 @@
 
     const usernameInput = findUsernameField(passwordInput);
     if (usernameInput?.value) addHint(usernameInput.value);
+
+    for (const identity of collectPageIdentityCandidates(passwordInput)) {
+      if (credentials.some(credential => (
+        String(credential?.username || '').trim().toLowerCase() === identity.toLowerCase()
+      ))) {
+        addHint(identity);
+      }
+    }
+    if (hints.length) return hints;
 
     const regions = [];
     const seen = new Set();
@@ -540,13 +614,25 @@
     addRegion(document.body);
 
     for (const region of regions) {
+      const regionHints = [];
       const visibleText = region.innerText || '';
       if (!visibleText) continue;
       for (const credential of credentials) {
         if (ranking.textContainsIdentity(visibleText, credential?.username)) {
-          addHint(credential.username);
+          regionHints.push(credential.username);
         }
       }
+      if (regionHints.length) {
+        for (const hint of regionHints) addHint(hint);
+        break;
+      }
+    }
+
+    // The account visibly selected beside the password field is authoritative.
+    // Fall back to the username remembered from step one only when the page
+    // does not expose an identity that matches the vault.
+    if (!hints.length && Date.now() - rememberedUsernameAt <= REMEMBERED_USERNAME_TTL_MS) {
+      addHint(rememberedUsername);
     }
     return hints;
   }
@@ -601,8 +687,8 @@
         continue;
       }
 
-      const iconSize = 28;
-      const inset = 5;
+      const iconSize = 20;
+      const inset = 3;
       const edge = 4;
       const maxLeft = Math.max(edge, window.innerWidth - iconSize - edge);
       const maxTop = Math.max(edge, window.innerHeight - iconSize - edge);
@@ -611,7 +697,17 @@
         rect.top + (rect.height - iconSize) / 2
       ));
       const minimumInsideLeft = Math.max(edge, rect.left + 2);
-      const left = Math.min(maxLeft, Math.max(minimumInsideLeft, rect.right - iconSize - inset));
+      const pairedPassword = input.type !== 'password' && findPairedPasswordField(input);
+      const outsideGap = 4;
+      const rightOutside = rect.right + outsideGap;
+      const leftOutside = rect.left - iconSize - outsideGap;
+      const left = pairedPassword
+        ? rightOutside + iconSize <= window.innerWidth - edge
+          ? rightOutside
+          : leftOutside >= edge
+            ? leftOutside
+            : Math.min(maxLeft, Math.max(minimumInsideLeft, rect.right - iconSize - inset))
+        : Math.min(maxLeft, Math.max(minimumInsideLeft, rect.right - iconSize - inset));
       const top = centeredTop;
 
       icon.style.left = `${left}px`;
@@ -709,11 +805,27 @@
       ));
     } else {
       const ranking = globalThis.AegisSuggestionRanking;
-      const identityHints = collectIdentityHints(input, response.credentials);
+      const pairedPasswordInput = input.type !== 'password'
+        ? findPairedPasswordField(input)
+        : null;
+      const usernameOnly = input.type !== 'password' && !pairedPasswordInput;
+      const identityHints = input.type !== 'password' && input.value.trim()
+        ? [input.value.trim()]
+        : pairedPasswordInput
+          ? collectIdentityHints(pairedPasswordInput, response.credentials)
+          : input.type === 'password'
+            ? collectIdentityHints(input, response.credentials)
+            : [];
       const rankedCredentials = ranking
         ? ranking.rankCredentials(response.credentials, { identityHints, pageUrl: location.href })
         : response.credentials;
-      for (const item of rankedCredentials) {
+      const exactIdentityMatches = ranking
+        ? ranking.matchCredentialsToIdentityHints(rankedCredentials, identityHints)
+        : [];
+      const suggestedCredentials = exactIdentityMatches.length
+        ? exactIdentityMatches
+        : rankedCredentials;
+      for (const item of suggestedCredentials) {
         if (!item || typeof item.id !== 'string') continue;
         const username = typeof item.username === 'string' && item.username
           ? item.username
@@ -723,15 +835,29 @@
           : new URL(PAGE_ORIGIN).hostname;
         const button = makeMenuButton(username, title, async () => {
           if (!(await refreshAccess()) || !input.isConnected) return;
+          if (usernameOnly) {
+            if (typeof item.username === 'string' && item.username.trim()) {
+              setNativeValue(input, item.username);
+              rememberedUsername = item.username.trim();
+              rememberedUsernameAt = Date.now();
+            }
+            closeMenu();
+            return;
+          }
           const result = await send({ type: 'FILL', id: item.id });
           if (!result?.ok || !samePageOrigin() || !accessAllowed) return;
           const credential = result.credential;
           if (!credential || typeof credential.password !== 'string') return;
-          const usernameInput = findUsernameField(input);
+          const passwordInput = input.type === 'password' ? input : pairedPasswordInput;
+          const usernameInput = input.type === 'password' ? findUsernameField(input) : input;
           if (usernameInput && typeof credential.username === 'string') {
             setNativeValue(usernameInput, credential.username);
           }
-          setNativeValue(input, credential.password);
+          if (typeof credential.username === 'string' && credential.username.trim()) {
+            rememberedUsername = credential.username.trim();
+            rememberedUsernameAt = Date.now();
+          }
+          if (passwordInput) setNativeValue(passwordInput, credential.password);
           closeMenu();
         });
         button.setAttribute('role', 'menuitem');
@@ -772,17 +898,54 @@
     const allPasswords = getPasswordFields(root);
     const visiblePasswords = allPasswords.filter(isVisible);
     const usernameInput = findUsernameField(passwordInput);
+    const pageIdentity = collectPageIdentityCandidates(passwordInput)[0] || '';
     const username = usernameInput?.value.trim()
+      || pageIdentity
       || (Date.now() - rememberedUsernameAt <= REMEMBERED_USERNAME_TTL_MS ? rememberedUsername : '');
     if (!username) return null;
+    if (username) {
+      rememberedUsername = username;
+      rememberedUsernameAt = Date.now();
+    }
 
-    const currentFields = visiblePasswords.filter(input => autocompleteTokens(input).includes('current-password'));
-    const newFields = visiblePasswords.filter(input => autocompleteTokens(input).includes('new-password'));
+    const descriptorFor = input => [
+      input.name,
+      input.id,
+      input.placeholder,
+      input.getAttribute('aria-label'),
+      input.getAttribute('title'),
+      input.getAttribute('data-testid'),
+      ...(input.labels ? [...input.labels].map(label => label.textContent) : [])
+    ].filter(Boolean).join(' ').toLowerCase();
+    const currentPattern = /(?:current|existing|old|present|hiện\s*tại|mật\s*khẩu\s*cũ)/i;
+    const newPattern = /(?:new|change|replacement|mới|đổi)/i;
+    const confirmPattern = /(?:confirm|confirmation|repeat|retype|again|xác\s*nhận|nhập\s*lại)/i;
+    const currentFields = visiblePasswords.filter(input => (
+      autocompleteTokens(input).includes('current-password')
+      || currentPattern.test(descriptorFor(input))
+    ));
+    const newFields = visiblePasswords.filter(input => (
+      autocompleteTokens(input).includes('new-password')
+      || newPattern.test(descriptorFor(input))
+      || confirmPattern.test(descriptorFor(input))
+    ));
     if (newFields.length) {
       if (currentFields.length > 1 || newFields.length > 2) return null;
-      const newPassword = newFields[0].value;
-      if (!newPassword || (newFields.length === 2 && newFields[1].value !== newPassword)) return null;
+      const primaryNewField = newFields.find(input => !confirmPattern.test(descriptorFor(input))) || newFields[0];
+      const newPassword = primaryNewField.value;
+      if (!newPassword || newFields.some(input => input.value !== newPassword)) return null;
       return { username, password: newPassword, intent: 'update' };
+    }
+
+    // Some sites omit autocomplete metadata. The common unambiguous fallback
+    // is current password + new password + repeated new password.
+    if (
+      visiblePasswords.length === 3
+      && visiblePasswords[1].value
+      && visiblePasswords[1].value === visiblePasswords[2].value
+      && visiblePasswords[0].value !== visiblePasswords[1].value
+    ) {
+      return { username, password: visiblePasswords[1].value, intent: 'update' };
     }
 
     if (visiblePasswords.length !== 1 || visiblePasswords[0] !== passwordInput) return null;
@@ -881,7 +1044,10 @@
       if (contextValid && uiLayer) showUnlockCaptureBanner(username, password, intent, captureOrigin, text);
       return;
     }
-    if (account.unchanged) return;
+    if (account.unchanged) {
+      await send({ type: 'DISMISS_LOGIN_CAPTURE' });
+      return;
+    }
     const isUpdate = intent === 'update' || account.found;
     closeBanner();
 
@@ -989,14 +1155,10 @@
       const passwordStillVisible = getPasswordFields(sourceRoot || document).some(isVisible);
       const successSignal = location.href !== initialUrl || !passwordStillVisible;
       if (successSignal) {
-        const check = await send({
-          type: 'CHECK_EXISTS',
-          username: candidate.username,
-          password: candidate.password
-        });
-        if (check?.ok && !check.exists && await refreshAccess()) {
-          await showSaveBanner(candidate.username, candidate.password, candidate.intent);
-        }
+        // showSaveBanner performs the authoritative comparison. Calling it
+        // directly also gives a locked vault an actionable unlock-and-retry
+        // notice instead of failing silently after a same-page login.
+        await showSaveBanner(candidate.username, candidate.password, candidate.intent);
         return;
       }
       if (Date.now() < deadline) setTimeout(checkOutcome, 300);
@@ -1042,7 +1204,7 @@
   }
 
   function wirePasswordField(input) {
-    injectIcon(input);
+    if (!findUsernameField(input)) injectIcon(input);
     if (wiredPasswordFields.has(input)) return;
     wiredPasswordFields.add(input);
     input.addEventListener('keydown', (event) => {
@@ -1078,7 +1240,7 @@
     const control = event.target.closest('button, [role="button"], input[type="button"], input[type="submit"]');
     if (!control || control.disabled) return;
     const label = `${control.textContent || ''} ${control.getAttribute('aria-label') || ''} ${control.value || ''}`;
-    const isLoginAction = /(?:sign\s*in|log\s*in|login|đăng\s*nhập|tiếp\s*tục|continue|next)/i.test(label);
+    const isLoginAction = /(?:sign\s*in|log\s*in|login|đăng\s*nhập|tiếp\s*(?:tục|theo)|continue|next)/i.test(label);
     const isPasswordAction = /(?:change|update|save)\s*(?:the\s*)?password|đổi\s*mật\s*khẩu|cập\s*nhật\s*mật\s*khẩu/i.test(label);
     if (!isLoginAction && !isPasswordAction) return;
     const passwordFields = getPasswordFields().filter(isVisible);
@@ -1100,11 +1262,16 @@
     if (!contextValid || !accessAllowed || !samePageOrigin()) return;
     ensureUi();
 
-    const fields = getPasswordFields();
-    for (const input of fields) {
+    const passwordFields = getPasswordFields();
+    const usernameFields = [...document.querySelectorAll('input')]
+      .filter(input => !passwordFields.includes(input) && isLikelyUsernameField(input));
+    const passwordIconFields = passwordFields.filter(input => !findUsernameField(input));
+    const fields = [...passwordIconFields, ...usernameFields];
+    for (const input of passwordFields) {
       wirePasswordField(input);
       if (input.form) wireForm(input.form);
     }
+    for (const input of usernameFields) injectIcon(input);
 
     for (const [input, icon] of icons) {
       if (!input.isConnected || !fields.includes(input)) {

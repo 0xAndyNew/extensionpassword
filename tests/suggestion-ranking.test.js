@@ -46,3 +46,30 @@ test('visible identity matching requires text boundaries', async () => {
   ), true);
   assert.equal(ranking.textContainsIdentity('notadmin@example.com', 'admin@example.com'), false);
 });
+
+test('identity matching tolerates Google-style split and invisible email text', async () => {
+  const ranking = await loadRanking();
+  assert.equal(ranking.textContainsIdentity(
+    'Welcome loveyoumomemy \u200e@ gmail . com Enter your password',
+    'loveyoumomemy@gmail.com'
+  ), true);
+});
+
+test('exact identity match narrows suggestions to the selected account', async () => {
+  const ranking = await loadRanking();
+  const credentials = [
+    { id: 'stale', username: 'old@example.com' },
+    { id: 'selected', username: 'current@example.com' },
+    { id: 'other', username: 'other@example.com' }
+  ];
+  const result = ranking.matchCredentialsToIdentityHints(credentials, ['current@example.com']);
+  assert.deepEqual(result.map(item => item.id), ['selected']);
+});
+
+test('extracts an email identity from account-chip text and attributes', async () => {
+  const ranking = await loadRanking();
+  assert.deepEqual(
+    [...ranking.extractIdentityCandidates('Account: loveyoumomemy \u200e@ gmail . com')],
+    ['loveyoumomemy@gmail.com']
+  );
+});

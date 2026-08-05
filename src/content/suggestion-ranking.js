@@ -5,7 +5,9 @@
     return String(value ?? '')
       .normalize('NFKC')
       .toLowerCase()
+      .replace(/[\u200B-\u200F\u2060\uFEFF]/g, '')
       .replace(/\s+/g, ' ')
+      .replace(/\s*([@._+\-])\s*/g, '$1')
       .trim();
   }
 
@@ -20,6 +22,13 @@
     const before = normalizedText[index - 1] || '';
     const after = normalizedText[index + normalizedIdentity.length] || '';
     return !isWordCharacter(before) && !isWordCharacter(after);
+  }
+
+  function extractIdentityCandidates(text) {
+    const normalized = normalizeText(text);
+    if (!normalized) return [];
+    const matches = normalized.match(/[\p{L}\p{N}][\p{L}\p{N}._+\-]*@[\p{L}\p{N}](?:[\p{L}\p{N}\-]*[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}\-]*[\p{L}\p{N}])?)+/gu) || [];
+    return [...new Set(matches)];
   }
 
   function urlMatchScore(credential, pageUrl) {
@@ -73,7 +82,15 @@
       .map(entry => entry.credential);
   }
 
+  function matchCredentialsToIdentityHints(credentials, identityHints = []) {
+    const normalizedHints = new Set(identityHints.map(normalizeText).filter(Boolean));
+    if (!normalizedHints.size) return [];
+    return credentials.filter(credential => normalizedHints.has(normalizeText(credential?.username)));
+  }
+
   root.AegisSuggestionRanking = Object.freeze({
+    extractIdentityCandidates,
+    matchCredentialsToIdentityHints,
     rankCredentials,
     textContainsIdentity
   });
