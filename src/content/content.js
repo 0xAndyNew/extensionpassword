@@ -425,6 +425,8 @@
     if (!element?.isConnected || element.disabled || element.readOnly) return false;
     const style = getComputedStyle(element);
     if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    const opacity = Number.parseFloat(style.opacity);
+    if (Number.isFinite(opacity) && opacity <= 0.01) return false;
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
   }

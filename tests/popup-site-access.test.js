@@ -31,3 +31,9 @@ test('compact autofill icon stays pinned inside password-only fields and outside
   assert.match(source, /new MutationObserver\(\(\) => \{\s*scheduleWire\(\);\s*trackPosition\(\);/);
   assert.match(source, /logo\.src = chrome\.runtime\.getURL\('src\/ui\/logo-48\.png'\)/);
 });
+
+test('autofill ignores transparent Microsoft username decoy fields', async () => {
+  const source = await readFile(new URL('../src/content/content.js', import.meta.url), 'utf8');
+  assert.match(source, /const opacity = Number\.parseFloat\(style\.opacity\)/);
+  assert.match(source, /Number\.isFinite\(opacity\) && opacity <= 0\.01/);
+});
