@@ -9,6 +9,8 @@ test('manifest host permissions are limited to the Firebase APIs used in product
     'https://securetoken.googleapis.com/*',
     'https://firestore.googleapis.com/*'
   ]);
+  assert.deepEqual(manifest.optional_host_permissions, ['https://*/*', 'http://*/*']);
+  assert.equal(manifest.permissions.includes('<all_urls>'), false);
   assert.equal(manifest.content_scripts[0].matches.includes('http://*/*'), false);
   assert.deepEqual(manifest.content_scripts[0].js.slice(0, 2), [
     'src/content/suggestion-ranking.js',

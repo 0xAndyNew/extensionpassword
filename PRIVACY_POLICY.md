@@ -121,6 +121,8 @@ Khi người dùng bắt đầu quét QR trên trang và cấp quyền truy cậ
 - `favicon`: saved-login site icons.
 - `downloads`: backups, CSV and OTP exports.
 - Firebase host permissions: Authentication token exchange, token refresh and Firestore sync.
+- Optional HTTP/HTTPS host access: requested only for the selected host when the user clicks “Allow page access” after a QR access failure. No all-sites grant is requested by this flow. A granted permission persists until revoked through the browser's extension site-access settings; QR scanning still requires a user action and `activeTab` screenshot access. This does not expand credential access to public HTTP pages.
+- Quyền host HTTP/HTTPS tùy chọn: chỉ yêu cầu cho host đã chọn khi người dùng bấm “Cho phép truy cập trang” sau lỗi quyền quét QR, không xin quyền tất cả website. Quyền đã cấp được lưu đến khi thu hồi trong thiết lập quyền truy cập trang của tiện ích; quét QR vẫn cần thao tác người dùng và quyền chụp ảnh `activeTab`. Thay đổi này không mở quyền truy cập credential trên HTTP công khai.
 
 ## 8. Security limitations / Giới hạn bảo mật
 

@@ -183,7 +183,10 @@ async function init() {
       $('googleView').classList.toggle('hidden', signedIn);
       $('authView').classList.toggle('hidden', !signedIn);
       $('vaultView').classList.add('hidden');
-      if (signedIn) authMode(s.exists, s.canCreate);
+      if (signedIn) {
+        authMode(s.exists, s.canCreate);
+        $('error').textContent = !s.exists && s.canCreate === false ? s.syncStatus?.error || '' : '';
+      }
     }
   } else {
     $('googleView').classList.remove('hidden');
@@ -235,6 +238,10 @@ function authMode(exists, canCreate = true) {
 // Translation must not perform authentication or visibility transitions.
 function updateAuthLabels(exists, canCreate = true) {
   const creationBlocked = !exists && canCreate === false;
+  $('authTitle').dataset.i18n = exists ? 'unlockVaultHeader' : creationBlocked ? 'cantCreateVault' : 'createVaultHeader';
+  $('authHint').dataset.i18n = exists ? 'enterMasterPwd' : creationBlocked ? 'firebaseCheckPending' : 'createMasterPwdHint';
+  $('authButton').dataset.i18n = exists ? 'unlockBtnText' : creationBlocked ? 'waitingFirebase' : 'createVaultBtn';
+  $('authRetryButton')?.classList.toggle('hidden', !creationBlocked);
   $('authTitle').textContent = exists
     ? t('unlockVaultHeader', 'Unlock Secure Vault')
     : creationBlocked
@@ -525,14 +532,50 @@ $('googleButton').onclick = async () => {
     setAccountControls(true);
     $('googleView').classList.add('hidden');
     const s = await sendReadWithRetry({ type: 'STATUS' }, { attempts: 2, timeoutMs: 3000 });
-    if (s.ok) authMode(s.exists, s.canCreate);
-    else $('googleError').textContent = s.error;
+    if (s.ok) {
+      authMode(s.exists, s.canCreate);
+      $('error').textContent = !s.exists && s.canCreate === false
+        ? s.syncStatus?.error || '' : '';
+    } else {
+      $('googleView').classList.remove('hidden');
+      $('googleError').textContent = s.error;
+    }
   } else {
     signedIn = false;
     setAccountControls(false);
     $('googleError').textContent = r.error;
   }
 };
+
+async function retryAuthStatus() {
+  const button = $('authRetryButton');
+  if (!signedIn || vaultUnlocked || button.disabled) return;
+  button.disabled = true;
+  $('error').textContent = '';
+  try {
+    const sync = await send({ type: 'SYNC_NOW' }, { timeoutMs: 25000 });
+    if (popupClosed || !signedIn || vaultUnlocked) return;
+    const status = await sendReadWithRetry({ type: 'STATUS' }, { attempts: 2, timeoutMs: 3000 });
+    if (popupClosed || !signedIn || vaultUnlocked) return;
+    if (!status?.ok) throw new Error(status?.error || sync?.error || l('Cannot read Vault data.', 'Không thể đọc dữ liệu Vault.'));
+    if (status.unlocked) {
+      await showVault();
+      return;
+    }
+    authMode(status.exists, status.canCreate);
+    if (!status.exists && status.canCreate === false) {
+      $('error').textContent = status.syncStatus?.error || sync?.error
+        || t('firebaseCheckPending', 'Firebase verification is still pending. Please retry.');
+    } else {
+      $('masterPassword').focus();
+    }
+  } catch (error) {
+    if (!popupClosed && signedIn && !vaultUnlocked) $('error').textContent = error?.message || l('Cannot read Vault data.', 'Không thể đọc dữ liệu Vault.');
+  } finally {
+    button.disabled = false;
+  }
+}
+$('authRetryButton').onclick = () => { void retryAuthStatus(); };
 
 // Vault Auth Action
 $('authButton').onclick = async () => {
@@ -1329,6 +1372,66 @@ async function currentScanTab() {
   return tabs[0] || null;
 }
 
+let qrPermissionTarget = null;
+
+function qrPageOrigin(url) {
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    return `${parsed.protocol}//${parsed.hostname}/*`;
+  } catch { return null; }
+}
+
+function isProtectedQrPage(url = '') {
+  return /^(?:chrome|edge|about|chrome-extension|extension|devtools):/i.test(url)
+    || /^https:\/\/(?:chromewebstore\.google\.com(?:\/|$)|chrome\.google\.com\/webstore(?:\/|$)|microsoftedge\.microsoft\.com\/addons(?:\/|$))/i.test(url);
+}
+
+function clearQrPermission() {
+  qrPermissionTarget = null;
+  $('qrPermissionNotice').classList.add('hidden');
+}
+
+function qrScanError(error, target) {
+  const message = String(error?.message || '');
+  const accessDenied = /Cannot access|cannot be scripted|extensions gallery|missing host permission|not allowed|không thể truy cập/i.test(message);
+  if (isProtectedQrPage(target?.url)) return l(
+    'The browser blocks QR selection on system and Store pages. Open the website containing the QR code, or import a QR image.',
+    'Trình duyệt chặn quét QR trên trang hệ thống và Store. Hãy mở website chứa QR hoặc import ảnh QR.');
+  if (accessDenied && /^file:/i.test(target?.url || '')) return l(
+    'Enable “Allow access to file URLs” in the extension details, then reopen this file tab and scan again. You can also import a QR image.',
+    'Bật “Cho phép truy cập vào các URL của tệp” trong chi tiết tiện ích, sau đó mở lại thẻ tệp và quét. Anh cũng có thể import ảnh QR.');
+  const origin = qrPageOrigin(target?.url);
+  if (accessDenied && origin && typeof chrome.permissions?.request === 'function') {
+    qrPermissionTarget = { ...target, origin };
+    $('qrPermissionNotice').classList.remove('hidden');
+    return t('qrPermissionHint');
+  }
+  return message || l('Could not open the QR selection tool.', 'Không thể mở công cụ khoanh vùng QR.');
+}
+
+async function allowQrPageAccess() {
+  const target = qrPermissionTarget;
+  const button = $('qrPermissionButton');
+  if (!target || button.disabled || screenScanInFlight || otpSaveInFlight || !vaultUnlocked || popupClosed) return;
+  button.disabled = true;
+  try {
+    // Invoke before any await: permissions.request requires a direct user gesture.
+    const granted = await chrome.permissions.request({ origins: [target.origin] });
+    if (popupClosed) return;
+    await assertScanTarget(target);
+    if (!granted) throw new Error(l(
+      'Page access was not granted. Click Allow page access to retry, or import a QR image.',
+      'Chưa được cấp quyền truy cập trang. Bấm Cho phép truy cập trang để thử lại hoặc import ảnh QR.'));
+    clearQrPermission();
+    await scanVisibleTabForOtp($('scanScreenMenuBtn'), target);
+  } catch (error) {
+    if (!popupClosed) showOtpToast(error?.message || l('Could not request page access.', 'Không thể yêu cầu quyền truy cập trang.'), 'error');
+  } finally { button.disabled = false; }
+}
+
+$('qrPermissionButton').onclick = () => { void allowQrPageAccess(); };
+
 async function assertScanTarget(target) {
   if (popupClosed || !vaultUnlocked || !isQrScanTargetMatching(target, await currentScanTab())) throw new Error(l(
     'The selected tab changed. Reopen the extension on the tab you want to scan.',
@@ -1351,20 +1454,25 @@ async function scanVisibleTabForOtp(sourceButton = $('otpCameraBtn'), expectedTa
   if (screenScanInFlight || otpSaveInFlight || !vaultUnlocked || popupClosed) return;
   screenScanInFlight = true;
   const scanButton = sourceButton;
-  const originalLabel = scanButton?.textContent;
+  const scanLabel = scanButton?.querySelector?.('.scan-menu-label') || scanButton;
+  const originalLabel = scanLabel?.textContent;
+  let target = expectedTarget;
+  clearQrPermission();
   try {
-    if (scanButton) { scanButton.disabled = true; scanButton.textContent = l('Opening…', 'Đang mở…'); }
+    if (scanButton) scanButton.disabled = true;
+    if (scanLabel) scanLabel.textContent = l('Opening…', 'Đang mở…');
     $('otpFormError').textContent = '';
     $('otpFormStatus').textContent = l(
       'Opening the QR selection tool on the page…', 'Đang mở công cụ khoanh vùng trên trang…');
     const tab = await currentScanTab();
-    const target = expectedTarget || (tab && { tabId: tab.id, windowId: tab.windowId, url: tab.url });
+    target = expectedTarget || (tab && { tabId: tab.id, windowId: tab.windowId, url: tab.url });
     if (!target || !isQrScanTargetMatching(target, tab)) throw new Error(l(
       'The selected tab changed. Reopen the extension on the tab you want to scan.',
       'Thẻ đã chọn đã thay đổi. Hãy mở lại tiện ích trên thẻ cần quét.'));
     const status = await send({ type: 'STATUS' });
     if (!status?.ok || !status.unlocked) throw new Error(l('Vault is locked.', 'Vault đang bị khóa.'));
     await assertScanTarget(target);
+    if (isProtectedQrPage(target.url)) throw new Error(qrScanError(null, target));
     if (typeof chrome?.scripting?.executeScript !== 'function') throw new Error(l(
       'The browser does not support QR region selection.', 'Trình duyệt không hỗ trợ công cụ khoanh vùng QR.'));
     await chrome.scripting.executeScript({
@@ -1375,15 +1483,13 @@ async function scanVisibleTabForOtp(sourceButton = $('otpCameraBtn'), expectedTa
     window.close();
   } catch (error) {
     $('otpFormStatus').textContent = '';
-    const isSystemPage = /Cannot access|cannot be scripted|extensions gallery|missing host permission|chrome:\/\/|edge:\/\/|không thể truy cập/i.test(String(error?.message || ''));
-    const message = isSystemPage
-      ? l('The browser does not allow QR selection on this page.', 'Trình duyệt không cho phép khoanh vùng QR trên trang này.')
-      : error?.message || l('Could not open the QR selection tool.', 'Không thể mở công cụ khoanh vùng QR.');
+    const message = qrScanError(error, target);
     $('otpFormError').textContent = message;
     showOtpToast(message, 'error');
   } finally {
     screenScanInFlight = false;
-    if (scanButton && !otpSaveInFlight) { scanButton.disabled = false; scanButton.textContent = originalLabel; }
+    if (scanLabel) scanLabel.textContent = scanLabel.dataset?.i18n ? t(scanLabel.dataset.i18n) : originalLabel;
+    if (scanButton && !otpSaveInFlight) scanButton.disabled = false;
   }
 }
 

@@ -23,8 +23,8 @@ test('screen scanning injects a fresh selector and lets the user choose one QR r
     readFile(new URL('../manifest.json', import.meta.url), 'utf8')
   ]);
 
-  assert.match(html, /id="scanScreenMenuBtn"[^>]*>[\s\S]*Quét màn hình</);
-  assert.match(html, /id="scanImportMenuBtn"[^>]*>[\s\S]*Import ảnh QR</);
+  assert.match(html, /id="scanScreenMenuBtn"[^>]*>[\s\S]*Quét màn hình<\/span>/);
+  assert.match(html, /id="scanImportMenuBtn"[^>]*>[\s\S]*Import ảnh QR<\/span>/);
   assert.match(html, /id="otpCameraBtn">Khoanh vùng QR</);
   assert.match(html, /id="headerQrFile"[^>]+accept="image\/\*"/);
   assert.match(source, /chrome\.scripting\.executeScript\(\{/);
