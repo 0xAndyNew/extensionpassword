@@ -646,22 +646,25 @@ export async function hasVault(googleSub) {
   return commonSyncKeys.some(key => own(commonLegacy, key) && commonLegacy[key] != null);
 }
 
-function nextVaultMetadata(data, previousData) {
+function nextVaultMetadata(data, previousData, ...otherParents) {
   const now = new Date().toISOString();
-  const previousRevision = Number.isSafeInteger(previousData?._meta?.revision)
-    ? previousData._meta.revision
-    : 0;
-  const suppliedRevision = Number.isSafeInteger(data?._meta?.revision) ? data._meta.revision : 0;
-  const previousCommit = metadataCommitId(previousData?._meta);
+  const parents = [previousData, ...otherParents].filter(Boolean);
+  const revisions = [data, ...parents].map(parent => (
+    Number.isSafeInteger(parent?._meta?.revision) ? parent._meta.revision : 0
+  ));
+  // Keep every direct parent ahead of inherited history, including legacy
+  // metadata identities, so a full lineage cannot evict the other merge parent.
+  const parentCommits = parents.map(parent => metadataCommitId(parent._meta));
+  const inheritedCommits = parents.flatMap(parent => parent._meta?.ancestors || []);
   const ancestors = [];
-  for (const commitId of [previousCommit, ...(previousData?._meta?.ancestors || [])]) {
+  for (const commitId of [...parentCommits, ...inheritedCommits]) {
     if (validCommitId(commitId) && !ancestors.includes(commitId)) ancestors.push(commitId);
     if (ancestors.length >= LINEAGE_LIMIT) break;
   }
   data._meta = {
     schemaVersion: 3,
     vaultId: previousData?._meta?.vaultId || data?._meta?.vaultId || crypto.randomUUID(),
-    revision: Math.max(previousRevision, suppliedRevision) + 1,
+    revision: Math.max(...revisions) + 1,
     commitId: crypto.randomUUID(),
     ancestors,
     updatedAt: now
@@ -830,7 +833,7 @@ async function clearSyncWork(googleSub) {
 
 async function conflictResult(googleSub, remote, reason, message, direction = 'upload') {
   if (remote?.envelope) await stageRemoteSnapshot(googleSub, remote, reason);
-  if (reason !== 'duplicate-remote-files') {
+  if (reason !== 'duplicate-remote-files' && reason !== 'etag-mismatch') {
     await chrome.storage.local.remove(pendingUploadKey(googleSub));
   }
   const state = reason === 'local-password-mismatch'
@@ -856,7 +859,6 @@ async function conflictResult(googleSub, remote, reason, message, direction = 'u
 }
 
 async function etagRefreshFailure(googleSub, error, direction = 'upload') {
-  await chrome.storage.local.remove(pendingUploadKey(googleSub));
   const status = await updateSyncStatus(googleSub, {
     state: 'error',
     direction,
@@ -986,22 +988,18 @@ export async function syncToFirestore(
       if (comparison !== 1) {
         // Auto-merge: local and remote have diverged or remote is newer.
         // Merge both sides and upload the union.
-        const mergedData = mergeVaultData(localData, remoteData);
-        let mergedEnvelope = envelope;
-        let mergedFinal = localData;
-        if (!snapshotDataEqual({ data: mergedData }, { data: localData })) {
-          mergedFinal = mergedData;
-          mergedEnvelope = await createEnvelope(mergedData, password);
-        }
-        const file = await uploadWithPrecondition(
-          googleSub, mergedEnvelope, mergedFinal,
-          remote.envelope ? { ...remote, data: remoteData } : remote
+        const mergedData = nextVaultMetadata(
+          mergeVaultData(localData, remoteData), remoteData, localData
         );
-
-        // Update local vault to the merged version
+        const mergedEnvelope = await createEnvelope(mergedData, password);
+        // Save the union before attempting the upload: a failed/contended write
+        // must leave the exact merged commit available for retry on this device.
         const key = vaultStorageKey(googleSub);
         await replaceWithKnownGood(key, mergedEnvelope);
-        setVaultMemoryCache(key, password, mergedFinal, mergedEnvelope);
+        setVaultMemoryCache(key, password, mergedData, mergedEnvelope);
+        const file = await uploadWithPrecondition(
+          googleSub, mergedEnvelope, mergedData, { ...remote, data: remoteData }
+        );
         await clearSyncWork(googleSub);
 
         const status = await updateSyncStatus(googleSub, {
@@ -1237,31 +1235,25 @@ export async function syncFromFirestore(googleSub, password, { preferRemote = fa
   }
   if (comparison === null) {
     // Automatic merge for background download conflicts
-    const mergedData = mergeVaultData(localSnapshot.data, remoteData);
-    let finalEnvelope = remote.envelope;
-    let finalData = remoteData;
-    if (!snapshotDataEqual({ data: mergedData }, { data: remoteData })) {
-      finalData = mergedData;
-      finalEnvelope = await createEnvelope(mergedData, password);
-    }
+    const mergedData = nextVaultMetadata(
+      mergeVaultData(localSnapshot.data, remoteData), remoteData, localSnapshot.data
+    );
+    const mergedEnvelope = await createEnvelope(mergedData, password);
+    await replaceWithKnownGood(key, mergedEnvelope);
+    setVaultMemoryCache(key, password, mergedData, mergedEnvelope);
+    await persistPendingUpload(googleSub, mergedData, { ...remote, data: remoteData });
 
-    // Update local vault to the merged version
-    await replaceWithKnownGood(key, finalEnvelope);
-    setVaultMemoryCache(key, password, finalData, finalEnvelope);
-    await clearSyncWork(googleSub);
-
-    // Upload the merged version back to Firestore so both are in sync
-    if (finalEnvelope !== remote.envelope) {
-      await uploadWithPrecondition(googleSub, finalEnvelope, finalData, remote).catch(() => null);
-    }
-
-    const status = await updateSyncStatus(googleSub, {
-      state: 'synced',
-      direction: 'none',
-      reason: null,
-      remoteFileId: remote.file.id
+    // Reuse upload preconditions and error handling; staging/pending proof stay
+    // intact until Firestore acknowledges the union (or an equivalent commit).
+    const upload = await syncToFirestore(googleSub, mergedEnvelope, {
+      password,
+      allowStaged: true
     });
-    return { ok: true, remoteFound: true, action: 'merged', status };
+    return {
+      ...upload,
+      remoteFound: true,
+      action: upload.ok ? 'merged' : upload.action || 'upload-error'
+    };
   }
   if (comparison > 0) {
     await replaceWithKnownGood(key, remote.envelope);
@@ -1809,17 +1801,20 @@ export async function adoptStagedRemote(googleSub, password) {
 
   // Auto-merge: if local has items not in remote, merge them so nothing is lost
   if (local?.envelope && password) {
+    let localData = null;
     try {
-      const localData = validateVaultData(await openEnvelope(local.envelope, password), {
+      localData = validateVaultData(await openEnvelope(local.envelope, password), {
         expectedGoogleSub: googleSub
       });
-      const merged = mergeVaultData(localData, remoteData);
-      if (!snapshotDataEqual({ data: merged }, { data: remoteData })) {
-        finalData = merged;
-        finalEnvelope = await createEnvelope(merged, password);
-      }
     } catch {
       // Local envelope can't be decrypted (different password) — keep remote only
+    }
+    if (localData) {
+      const merged = mergeVaultData(localData, remoteData);
+      if (!snapshotDataEqual({ data: merged }, { data: remoteData })) {
+        finalData = nextVaultMetadata(merged, remoteData, localData);
+        finalEnvelope = await createEnvelope(finalData, password);
+      }
     }
   }
 
@@ -1842,8 +1837,26 @@ export async function adoptStagedRemote(googleSub, password) {
   await replaceWithKnownGood(key, finalEnvelope);
   setVaultMemoryCache(key, password, finalData, finalEnvelope);
   if (usedLegacy) await persistLegacyOwnerClaim(googleSub).catch(() => null);
-  await clearSyncWork(googleSub);
   await setSessionPassword(password);
+  if (finalEnvelope !== latest.envelope) {
+    await persistPendingUpload(googleSub, finalData, { ...latest, data: remoteData });
+    const upload = await syncToFirestore(googleSub, finalEnvelope, {
+      password,
+      allowStaged: true
+    });
+    const status = await updateSyncStatus(googleSub, { recoveryAvailable });
+    // The upload preflight can discover another branch and merge again. Return
+    // the saved result, not the earlier union that preceded that second merge.
+    const saved = await decryptStoredVault(key, password, googleSub);
+    return {
+      ...upload,
+      action: upload.ok ? 'downloaded' : upload.action || 'upload-error',
+      data: saved.data,
+      recoveryKey: recoveryAvailable ? recoveryKey : null,
+      status
+    };
+  }
+  await clearSyncWork(googleSub);
   const status = await updateSyncStatus(googleSub, {
     state: 'synced',
     direction: 'download',

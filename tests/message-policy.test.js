@@ -69,6 +69,13 @@ test('preserves a claimed capture origin for background verification after redir
   assert.equal(result.message.captureOrigin, 'https://login.live.com');
 });
 
+test('QR actions are limited to the top-frame selector', () => {
+  for (const type of ['CAPTURE_QR_SELECTION', 'SAVE_QR_URI']) {
+    assert.throws(() => authorizeMessage({ type }, { ...contentSender, frameId: 2 }, runtimeId), /không hợp lệ/);
+  }
+  assert.doesNotThrow(() => authorizeMessage({ type: 'GET_UI_LANGUAGE' }, { ...contentSender, frameId: 2 }, runtimeId));
+});
+
 test('trusts extension pages belonging to this runtime', () => {
   const sender = {
     id: runtimeId,
@@ -83,7 +90,7 @@ test('rejects other extensions and unsupported sender protocols', () => {
   assert.equal(getMessageContext({ id: runtimeId, url: 'file:///tmp/test.html' }, runtimeId).kind, 'denied');
 });
 
-test('rejects public HTTP content but permits loopback development origins', () => {
+test('public HTTP content is restricted to QR and language while loopback retains credential access', () => {
   const publicHttp = {
     ...contentSender,
     url: 'http://example.com/login',
@@ -94,6 +101,16 @@ test('rejects public HTTP content but permits loopback development origins', () 
     url: 'http://localhost:3000/login',
     tab: { id: 9, url: 'http://localhost:3000/login' }
   };
-  assert.equal(getMessageContext(publicHttp, runtimeId).kind, 'denied');
+  assert.equal(getMessageContext(publicHttp, runtimeId).qrOnly, true);
   assert.equal(getMessageContext(localhost, runtimeId).kind, 'content');
+  assert.doesNotThrow(() => authorizeMessage({ type: 'MATCH' }, localhost, runtimeId));
+  const fileSender = { ...contentSender, url: 'file:///tmp/qr.html', tab: { id: 10, windowId: 3, url: 'file:///tmp/qr.html' } };
+  for (const sender of [publicHttp, fileSender]) {
+    for (const type of ['CAPTURE_QR_SELECTION', 'SAVE_QR_URI', 'GET_UI_LANGUAGE']) {
+      assert.doesNotThrow(() => authorizeMessage({ type }, sender, runtimeId));
+    }
+    for (const type of ['MATCH', 'FILL', 'SAVE', 'STAGE_LOGIN_CAPTURE', 'LIST_ALL', 'OTP_LIST', 'GOOGLE_SIGN_OUT']) {
+      assert.throws(() => authorizeMessage({ type }, sender, runtimeId), /không được phép/);
+    }
+  }
 });

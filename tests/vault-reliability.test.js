@@ -15,6 +15,7 @@ import {
   inspectEncryptedBackup,
   validateNewMasterPassword,
   readVault,
+  writeVaultLocal,
   hasVault,
   lockVault,
   __getVaultCacheStatsForTests,
@@ -292,6 +293,50 @@ function memoryStorageArea(initial = {}) {
     async setAccessLevel() {}
   };
 }
+
+test('regular local writes retain single-parent lineage and upgrade legacy parent identities', async t => {
+  const originalChrome = globalThis.chrome;
+  const local = memoryStorageArea();
+  globalThis.chrome = {
+    storage: { local, sync: memoryStorageArea(), session: memoryStorageArea() }
+  };
+  t.after(() => {
+    globalThis.chrome = originalChrome;
+    __resetVaultCacheForTests();
+  });
+  const password = 'a-strong-master-password';
+  const key = `aegisVault_${owner.googleSub}`;
+  const data = {
+    owner,
+    credentials: [{ id: 'regular-write' }],
+    otpAccounts: [],
+    excludedOrigins: [],
+    settings: {},
+    _meta: {
+      schemaVersion: 2,
+      vaultId: 'regular-write-vault',
+      revision: 5,
+      updatedAt: '2026-07-28T00:00:00.000Z'
+    }
+  };
+  const legacyParent = legacyCommitIdForMetadata(data._meta);
+  await local.set({ [key]: await createEnvelope(data, password) });
+  await writeVaultLocal(structuredClone(data), password, owner.googleSub);
+  const upgraded = await openEnvelope(local.values.get(key), password);
+  assert.equal(upgraded._meta.vaultId, data._meta.vaultId);
+  assert.equal(upgraded._meta.revision, 6);
+  assert.equal(upgraded._meta.schemaVersion, 3);
+  assert.deepEqual(upgraded._meta.ancestors, [legacyParent]);
+
+  upgraded._meta.ancestors = Array.from({ length: 32 }, (_, index) => `regular-history-${index}`);
+  await local.set({ [key]: await createEnvelope(upgraded, password) });
+  await writeVaultLocal(structuredClone(upgraded), password, owner.googleSub);
+  const next = await openEnvelope(local.values.get(key), password);
+  assert.equal(next._meta.revision, 7);
+  assert.notEqual(next._meta.commitId, upgraded._meta.commitId);
+  assert.equal(next._meta.ancestors.length, 32);
+  assert.deepEqual(next._meta.ancestors, [upgraded._meta.commitId, ...upgraded._meta.ancestors.slice(0, 31)]);
+});
 
 test('trusted memory cache avoids repeated PBKDF2 and legacy owner claims isolate accounts', async t => {
   const originalChrome = globalThis.chrome;

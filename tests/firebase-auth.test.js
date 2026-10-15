@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   getFirebaseIdToken,
+  getFirebaseUser,
+  signOutFirebase,
   isMicrosoftEdge,
   normalizeGoogleWebClientId
 } from '../src/auth/firebase-auth.js';
@@ -103,6 +105,26 @@ test('an expired Firebase ID token is not reused after refresh fails', async t =
     error => error?.code === 'RECONNECT_REQUIRED'
   );
 });
+
+for (const identities of [
+  { aegisFirebaseUser: { sub: 'modern' } },
+  { aegisGoogleUser: { sub: 'legacy' } },
+  { aegisFirebaseUser: { sub: 'modern' }, aegisGoogleUser: { sub: 'legacy' } }
+]) {
+  test(`sign-out clears identity keys ${Object.keys(identities).join(', ')} without removing the vault`, async t => {
+    const originalChrome = globalThis.chrome;
+    const local = storageArea({ ...identities, aegisFirebaseTokens: { idToken: 'local-token' }, aegisVault_modern: { encrypted: true } });
+    const session = storageArea({ ...identities, aegisFirebaseTokens: { idToken: 'session-token' } });
+    globalThis.chrome = { storage: { local, session } };
+    t.after(() => { globalThis.chrome = originalChrome; });
+    await signOutFirebase();
+    assert.equal(await getFirebaseUser(), null);
+    for (const area of [local, session]) {
+      for (const key of ['aegisFirebaseUser', 'aegisGoogleUser', 'aegisFirebaseTokens']) assert.equal(area.values.has(key), false);
+    }
+    assert.deepEqual(local.values.get('aegisVault_modern'), { encrypted: true });
+  });
+}
 
 test('Google OAuth requests only an ID token and validates the returned state', async () => {
   const source = await readFile(new URL('../src/auth/firebase-auth.js', import.meta.url), 'utf8');

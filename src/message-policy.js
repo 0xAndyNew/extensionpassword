@@ -10,8 +10,11 @@ const CONTENT_ACTIONS = new Set([
   'TAKE_LOGIN_CAPTURE',
   'DISMISS_LOGIN_CAPTURE',
   'CAPTURE_QR_SELECTION',
-  'SAVE_QR_URI'
+  'SAVE_QR_URI',
+  'GET_UI_LANGUAGE'
 ]);
+
+const QR_ONLY_ACTIONS = new Set(['CAPTURE_QR_SELECTION', 'SAVE_QR_URI', 'GET_UI_LANGUAGE']);
 
 function parseSenderUrl(sender) {
   const value = sender?.url || sender?.tab?.url || '';
@@ -42,12 +45,12 @@ export function getMessageContext(sender, runtimeId) {
     return { kind: 'extension', url: url.href };
   }
 
-  if (sender.tab && (url.protocol === 'https:' || url.protocol === 'http:')) {
-    if (url.protocol === 'http:' && !isLoopbackHostname(url.hostname)) {
-      return { kind: 'denied' };
-    }
+  if (sender.tab && ['https:', 'http:', 'file:'].includes(url.protocol)) {
+    const qrOnly = url.protocol === 'file:'
+      || (url.protocol === 'http:' && !isLoopbackHostname(url.hostname));
     return {
       kind: 'content',
+      qrOnly,
       origin: url.origin,
       tabId: sender.tab.id,
       windowId: sender.tab.windowId,
@@ -70,8 +73,14 @@ export function authorizeMessage(message, sender, runtimeId) {
     throw new Error('Nguồn yêu cầu không được phép.');
   }
 
-  if (context.kind === 'content' && !CONTENT_ACTIONS.has(message.type)) {
+  if (context.kind === 'content' && (!CONTENT_ACTIONS.has(message.type)
+    || (context.qrOnly && !QR_ONLY_ACTIONS.has(message.type)))) {
     throw new Error('Trang web không được phép thực hiện hành động này.');
+  }
+
+  if (context.kind === 'content' && context.frameId !== 0
+    && ['CAPTURE_QR_SELECTION', 'SAVE_QR_URI'].includes(message.type)) {
+    throw new Error('Nguồn chọn vùng QR không hợp lệ.');
   }
 
   const normalizedMessage = context.kind === 'content'

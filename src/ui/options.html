@@ -1,4 +1,4 @@
-<!doctype html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aegis Vault Dashboard</title><link rel="stylesheet" href="index.css"><style>
+<!doctype html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aegis Vault Dashboard</title><link rel="stylesheet" href="index.css"><link rel="stylesheet" href="options-otp.css"><style>
 :root {
   --apple-bg: #f5f5f7;
   --apple-panel: #ffffff;
@@ -640,6 +640,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   <div class="brand"><img src="logo.svg" alt="logo" class="logo-img"><h1>Aegis Vault</h1></div>
   <ul class="nav-menu">
     <li class="nav-item active" id="menuLogins" data-i18n="tabLogins">🔑 Logins</li>
+    <li class="nav-item" id="menuOtp" data-i18n="tabOtp">◷ OTP</li>
     <li class="nav-item" id="menuNotes" data-i18n="tabNotes">📝 Ghi chú</li>
     <li class="nav-item" id="menuCards" data-i18n="tabCards">💳 Thẻ ATM</li>
     <li class="nav-item" id="menuIdentity" data-i18n="tabIdentity">👤 Định danh</li>
@@ -692,6 +693,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   
   <section class="grid-container" id="loginsSection">
     <div class="grid" id="loginsGrid"></div>
+  </section>
+
+  <section class="grid-container hidden" id="otpSection">
+    <div class="otp-dashboard-header">
+      <h3 data-i18n="otpTitle">OTP Authenticator (2FA)</h3>
+      <div class="otp-toolbar">
+        <button id="scanScreenMenuBtn" type="button" data-i18n="scanQrBtn">📷 Scan screen QR</button>
+        <button id="scanImportMenuBtn" type="button" data-i18n="otpImportImage">Import QR image</button>
+        <button id="addOtpBtn" type="button" class="primary" data-i18n="otpAddCode">+ Add code</button>
+      </div>
+    </div>
+    <div class="otp-list" id="otpList" aria-live="off"></div>
   </section>
 
   <section class="grid-container hidden" id="notesSection">
@@ -1170,6 +1183,53 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     </div>
   </div>
 </div>
+
+<div id="otpModal" class="otp-modal hidden">
+  <div class="otp-dialog" role="dialog" aria-modal="true" aria-labelledby="otpDialogTitle">
+    <h3 id="otpDialogTitle" data-i18n="otpAddTitle">Add authenticator</h3>
+    <input id="otpEditId" type="hidden">
+    <label class="otp-form-field" for="otpUri"><span data-i18n="otpSetupUri">Setup URI (optional)</span><input id="otpUri" inputmode="url" aria-describedby="otpUriHint" placeholder="otpauth://totp/…" autocomplete="off" spellcheck="false"></label>
+    <p class="otp-field-hint" id="otpUriHint" data-i18n="otpSetupHint">Paste a URI to fill the fields. The fields below are the data that will be saved.</p>
+    <label class="otp-form-field" for="otpIssuer"><span data-i18n="otpService">Service</span><input id="otpIssuer" autocomplete="off" placeholder="GitHub, Microsoft…"></label>
+    <label class="otp-form-field" for="otpAccount"><span data-i18n="otpAccountLabel">Account</span><input id="otpAccount" autocomplete="off" placeholder="name@example.com"></label>
+    <label class="otp-form-field" for="otpSecret"><span data-i18n="otpBase32Secret">Base32 secret</span><input id="otpSecret" autocomplete="off" spellcheck="false" placeholder="JBSWY3DPEHPK3PXP"></label>
+    <div class="otp-options-grid">
+      <label class="otp-form-field" for="otpAlgorithm"><span data-i18n="otpAlgorithmLabel">Algorithm</span><select id="otpAlgorithm"><option value="SHA1">SHA-1</option><option value="SHA256">SHA-256</option><option value="SHA512">SHA-512</option></select></label>
+      <label class="otp-form-field" for="otpDigits"><span data-i18n="otpDigitsLabel">Digits</span><select id="otpDigits"><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></label>
+      <label class="otp-form-field" for="otpPeriod"><span data-i18n="otpPeriodLabel">Period (seconds)</span><input id="otpPeriod" type="number" min="5" max="300" step="1" value="30"></label>
+    </div>
+    <input id="otpQrFile" type="file" accept="image/*" class="hidden">
+    <p id="otpFormStatus" class="otp-form-status" role="status" aria-live="polite"></p>
+    <p id="otpFormError" class="error" role="alert"></p>
+    <button id="otpDeleteBtn" class="otp-delete-btn" type="button" data-i18n="otpDeleteCode">Delete this OTP</button>
+    <div id="otpDeleteConfirm" class="otp-delete-confirm hidden" role="alertdialog" aria-labelledby="otpDeletePrompt">
+      <p id="otpDeletePrompt" data-i18n="otpDeletePrompt">Do you agree to delete this OTP?</p>
+      <div class="otp-delete-confirm-actions">
+        <button id="otpDeleteCancelBtn" type="button" data-i18n="otpKeepCode">Keep OTP</button>
+        <button id="otpDeleteConfirmBtn" class="otp-delete-confirm-btn" type="button" data-i18n="otpConfirmDelete">Delete OTP</button>
+      </div>
+    </div>
+    <div class="otp-dialog-actions"><button id="otpCameraBtn" type="button" data-i18n="otpSelectRegion">Select QR region</button><button id="otpImageBtn" type="button" data-i18n="otpImageLabel">QR image</button></div>
+    <div class="otp-dialog-actions"><button id="otpCancelBtn" type="button" data-i18n="cancelBtn">Cancel</button><button id="otpSaveBtn" class="primary" type="button" data-i18n="otpSaveCode">Save OTP</button></div>
+  </div>
+</div>
+<div id="otpQrModal" class="otp-modal hidden">
+  <div class="otp-dialog otp-qr-dialog" role="dialog" aria-modal="true" aria-labelledby="otpQrTitle">
+    <h3 id="otpQrTitle" data-i18n="otpQrCodeTitle">OTP QR code</h3><p id="otpQrLabel" class="otp-qr-label"></p>
+    <canvas id="otpQrCanvas" class="otp-qr-canvas" width="230" height="230"></canvas>
+    <p class="otp-qr-warning" data-i18n="otpQrSecretWarning">This QR contains your OTP secret. Only scan it with a trusted device and do not share this image.</p>
+    <div class="otp-dialog-actions"><button id="otpQrCloseBtn" class="primary" type="button" data-i18n="otpClose">Close</button></div>
+  </div>
+</div>
+<div id="otpScanPicker" class="otp-modal hidden">
+  <div class="otp-dialog" role="dialog" aria-modal="true" aria-labelledby="otpScanTitle">
+    <h3 id="otpScanTitle" data-i18n="otpScanTitle">Scan QR on a browser tab</h3>
+    <label class="otp-form-field" for="otpScanTab"><span data-i18n="otpChooseTab">Choose the tab containing the QR code</span><select id="otpScanTab"></select></label>
+    <div class="otp-dialog-actions"><button id="otpScanCancelBtn" type="button" data-i18n="cancelBtn">Cancel</button><button id="otpScanStartBtn" class="primary" type="button" data-i18n="otpStartScan">Select QR region</button></div>
+  </div>
+</div>
+<div id="otpCopyToast" class="otp-copy-toast" role="status" aria-live="polite"></div>
+<input id="headerQrFile" type="file" accept="image/*" class="hidden">
 
 <script type="module" src="options.js"></script>
 </body></html>

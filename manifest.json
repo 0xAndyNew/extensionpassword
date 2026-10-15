@@ -1,7 +1,7 @@
 {
     "manifest_version":  3,
     "name":  "Aegis Vault",
-    "version":  "0.3.91",
+    "version":  "0.3.94",
     "key":  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5yli2TXcwDwfPK4D5dAzWEKUWPlcTvEw40faYLWrsUsG2oFntx+hL8R5lzd7IPR3cKeg8jCCZTsNp9paiU2ms3o8iZvhKEwqo1jC15nzrKkQwsoShn4w5LCqdXMCoGAbTQ6gh/otBRR3HmAhYLeLDOkfr+FYuutvnORRGb/qXI89P2ka6GH2LqbIfTCd170wcNrMcKfxndmz+aOb81sXYkXL9q/9C1mgcFLn/4pcj7hJAr4Xz34MvDXVO4eKUMT6b+zICHATz9aEsIf5pGh0jUfogZ17lNOaAZ4BGjs8DHaprAXRLUUtcbjDG7PP6AjBdqGnbFClGvKY2bzB5gLepwIDAQAB",
     "minimum_chrome_version":  "106",
     "description":  "Kho mật khẩu local-first được mã hóa, hỗ trợ Firebase, OTP và autofill an toàn.",

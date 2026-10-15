@@ -1,0 +1,411 @@
+YÊU CẦU KHẮC PHỤC VÀ KIỂM THỬ TRƯỚC KHI PHÁT HÀNH AEGIS VAULT
+Ngày lập: 15/10/2026
+Phiên bản được audit: 0.3.93
+
+MỤC ĐÍCH VÀ PHẠM VI
+==================
+Tài liệu này giải thích các việc cần xử lý trước khi gửi extension lên Store, bao gồm nguyên nhân, tác động, yêu cầu sửa và tiêu chí nghiệm thu.
+
+Đây là tài liệu yêu cầu được lập từ audit 0.3.93. Trạng thái thực hiện mới nhất được ghi bên dưới; các tiêu chí chưa kiểm thử không được coi là đạt.
+
+CẬP NHẬT THỰC HIỆN — 15/10/2026, BẢN 0.3.94
+---------------------------------------------
+Đã sửa trong mã nguồn và có test tự động:
+- Merge có commit mới và cả hai parent; giữ union khi upload thất bại, không báo synced giả.
+- Journal giữ snapshot nguồn mã hóa để bảo toàn upsert/replace qua lỗi upload và khởi động lại; luôn replay trước khi xác nhận hoàn tất. Merge trong lúc ghi lại chưa được coi là upload cuối thành công.
+- Đổi mật khẩu chính phải đồng bộ xong journal trước, tránh bỏ lại snapshot mã hóa bằng mật khẩu cũ; thất bại thì không đổi mật khẩu.
+- Backup cố định đúng lựa chọn, payload/mật khẩu và tên file khi xác nhận; bỏ qua kết quả đọc cũ.
+- Notes chặn Save trùng và kết quả/timer cũ; ghi thành công nhưng refresh lỗi vẫn giữ guard và thông báo đúng.
+- Dashboard QR hướng dẫn bấm biểu tượng extension trên tab đích trong 60 giây để nhận activeTab, không thêm quyền host rộng. Intent một lần được bind tab/window/URL nếu có, hết hạn hoặc hủy khi đổi tab đích/điều hướng/đóng.
+- Chụp QR kiểm tra lại tab hoạt động/window/URL trước khi trả ảnh; HTTP/file chỉ được gọi API QR/ngôn ngữ, không mở API credential.
+- Đổi ngôn ngữ không chuyển trạng thái auth; logout dọn identity legacy, không xóa vault.
+- Content không nhận danh sách OTP secret; ngôn ngữ qua GET_UI_LANGUAGE, vẫn giữ TRUSTED_CONTEXTS.
+- Privacy policy Việt/Anh mô tả session capture, screenshot toàn vùng đang hiển thị rồi cắt local và snapshot mã hóa chờ đồng bộ.
+
+Kết quả đã chạy trên working tree cuối:
+- npm run check: ĐẠT.
+- npm test: 233/233 ĐẠT, 0 fail, 0 skip.
+- git diff --check: ĐẠT.
+- npm run bump: 0.3.93 -> 0.3.94; manifest/package đồng nhất; README đã cập nhật.
+- npm run build với thư mục mới: ĐẠT; không xóa/ghi đè gói cũ.
+- ZIP: dist/release-0.3.94-20261015-23bb91a1/aegis-vault.zip
+- ZIP có 39 file, 659953 byte; CRC hợp lệ; byte từng file khớp working tree; import HTML/JS tương đối có đủ; có firebase-config.js; không có tests/.git/.claude/private key hoặc marker service-account/client-secret/Google token theo kiểm tra đã thực hiện.
+- SHA256: a4dccd45ca1db6851f4ecdd993a0f6797ab717e4d47cb482c123d768d9c0087f
+
+CHƯA XÁC MINH — KHÔNG KẾT LUẬN ĐÃ SẴN SÀNG LÊN STORE:
+- Chrome/Edge thật: chưa cài/chạy gói cuối trên profile sạch hoặc nâng cấp; chưa test quyền activeTab, file access, OAuth, clipboard và service worker thật. Máy có Chrome 155.0.8059.40 và Edge 155.0.4283.45, nhưng không có phiên tự động hóa trình duyệt gắn vào phiên làm việc này.
+- Đồng bộ live hai thiết bị/profile, offline/retry thực tế: chưa chạy; test hiện dùng mock storage/Firestore và crypto thật.
+- Firestore Rules đúng UID/sai UID/chưa đăng nhập; OAuth/redirect/audience/API restrictions production: chưa xác minh, không thay đổi production.
+- URL privacy policy công khai và khai báo dữ liệu/quyền trong Store: chưa xác minh/công bố.
+- Chưa commit/push, chưa upload Store, không xóa dữ liệu hoặc worktree.
+
+Dùng ZIP trên để kiểm thử nghiệm thu các mục 4.2–4.4 và cài thử gói cuối trước quyết định gửi Store.
+
+Nguyên tắc thực hiện:
+- Chỉ sửa đúng các vấn đề được người dùng yêu cầu hoặc xác nhận; không tự mở rộng thành refactor hay thay đổi tính năng khác.
+- Bảo toàn dữ liệu hiện có và khả năng đọc vault/backup từ phiên bản cũ.
+- Không tự xóa dữ liệu local/cloud, ghi đè dữ liệu production hoặc thay đổi quyền truy cập production khi chưa được cho phép.
+- Dùng tài khoản, vault và Firebase thử nghiệm cho các tình huống có thể thay thế dữ liệu.
+- Có backup mã hóa và xác minh mở được backup trước khi thử khôi phục hoặc kiểm thử đồng bộ có rủi ro.
+- Tên file và số dòng dưới đây là tham chiếu tại thời điểm audit; số dòng có thể thay đổi sau khi sửa.
+
+MỨC ƯU TIÊN
+============
+P1: Nguy cơ mất hoặc thay thế sai dữ liệu; phải sửa trước phát hành.
+P2: Lỗi chức năng hoặc vấn đề phân tách dữ liệu nhạy cảm; cần xử lý trước phát hành.
+P3: Lỗi ngôn ngữ/tính nhất quán; phải kiểm tra để đáp ứng yêu cầu hỗ trợ Việt/Anh.
+
+
+1. SỬA LỖI ĐỒNG BỘ MẤT DỮ LIỆU VÀ KHÔI PHỤC NHẦM BACKUP
+========================================================
+
+1.1. P1 — Mất dữ liệu sau khi gộp vault giữa hai thiết bị
+------------------------------------------------------
+Vị trí tham chiếu:
+- src/vault/repository.js:379 — so sánh quan hệ giữa các snapshot.
+- src/vault/repository.js:408 — mergeVaultData.
+- src/vault/repository.js:989 — nhánh merge khi upload.
+- src/vault/repository.js:1240 — nhánh merge khi download.
+- src/vault/repository.js:1266 — nhận bản được coi là mới hơn và thay thế local.
+
+Hiện tượng đã tái hiện:
+1) Hai thiết bị A và B cùng xuất phát từ một vault gốc.
+2) Mỗi thiết bị sửa dữ liệu riêng, tạo ra hai nhánh khác nhau.
+3) Đồng bộ gộp thành công; kết quả chứa cả mục chỉ tồn tại trên A.
+4) B vẫn giữ bản trước khi gộp, tiếp tục sửa rồi upload.
+5) A đồng bộ lại và mất mục chỉ có trên A.
+
+Nguyên nhân:
+Kết quả merge thay đổi nội dung nhưng vẫn giữ commitId của bản remote cũ. Hệ thống vì vậy coi một bản phát triển từ remote cũ là bản mới hơn cả kết quả merge, dù bản đó chưa từng chứa dữ liệu được bổ sung từ local.
+
+Yêu cầu sửa:
+- Kết quả merge làm thay đổi nội dung phải có danh tính commit mới.
+- Metadata phải phản ánh quan hệ với cả hai nhánh đã được gộp, tương thích cơ chế xác thực và giới hạn metadata hiện có.
+- Áp dụng nhất quán ở cả merge khi upload và merge khi download.
+- Không chỉ tăng timestamp hoặc revision để thay thế bằng chứng quan hệ tổ tiên.
+- Giữ cơ chế ghi có điều kiện của Firestore; khi remote thay đổi trong lúc upload, không được ghi đè mù.
+- Kiểm tra pending mutations/journal và trạng thái sync đi kèm để không báo thành công khi công việc chưa hoàn tất.
+
+Tiêu chí nghiệm thu:
+- Có test hồi quy đúng chuỗi A/B ở trên, bao gồm lần upload từ thiết bị còn giữ nhánh cũ và lần download tiếp theo.
+- Mục chỉ có ở A vẫn tồn tại sau toàn bộ chuỗi đồng bộ.
+- Hai thiết bị hội tụ về cùng dữ liệu sau khi đồng bộ hoàn tất.
+- Kiểm tra cả hai đường merge upload/download và tình huống mạng lỗi hoặc remote đổi trong lúc ghi.
+- Không gây lỗi đọc vault cũ, đổi mật khẩu chính hay cơ chế xử lý xung đột hiện có.
+
+1.2. P1 — Tên file backup và dữ liệu khôi phục không khớp
+-------------------------------------------------------
+Vị trí tham chiếu:
+- src/ui/options.js:1599 — đọc file được chọn.
+- src/ui/options.js:1659 — gửi IMPORT_ENCRYPTED_BACKUP.
+
+Hiện tượng đã tái hiện:
+Chọn A.json rồi chọn B.json ngay sau đó. Nếu B đọc xong trước A, giao diện hiển thị B.json nhưng payload khôi phục lại có thể là A.json. Khi xác nhận, vault có nguy cơ bị thay thế bằng nội dung không đúng file đang hiển thị.
+
+Nguyên nhân:
+Các lần đọc file bất đồng bộ cùng ghi vào một biến payload mà không kiểm tra lần chọn nào còn hiệu lực.
+
+Yêu cầu sửa:
+- Chỉ kết quả đọc của lựa chọn mới nhất được cập nhật payload và trạng thái nút khôi phục.
+- Nếu lựa chọn mới bị hủy, quá lớn hoặc lỗi đọc, kết quả cũ về muộn không được bật lại nút hay khôi phục payload cũ.
+- Khi bắt đầu xác nhận khôi phục, phải cố định đúng file/payload tương ứng; không để thay đổi lựa chọn trong lúc hộp xác nhận mở làm lệch dữ liệu được khôi phục.
+- Giữ xác nhận rõ ràng rằng khôi phục sẽ thay thế vault hiện tại.
+
+Tiêu chí nghiệm thu:
+- Test A đọc chậm/B đọc nhanh và thứ tự ngược lại.
+- Test chọn file rồi bỏ chọn; chọn file hợp lệ rồi chọn file lỗi/quá lớn.
+- Test đổi file trong lúc xác nhận khôi phục.
+- Tên file được xác nhận và payload gửi vào background luôn cùng một lựa chọn.
+- Không có thao tác khôi phục khi chưa có payload hợp lệ và xác nhận tương ứng.
+
+
+2. SỬA QUYỀN QUÉT QR, RACE LƯU NOTES, ĐỔI NGÔN NGỮ VÀ LOGOUT LEGACY
+===================================================================
+
+2.1. P2 — Luồng quét QR từ dashboard chưa có quyền chụp tab hợp lệ
+----------------------------------------------------------------
+Vị trí tham chiếu:
+- src/ui/options-otp.js:607 — chuyển sang tab rồi inject công cụ quét.
+- src/background.js:527 — chrome.tabs.captureVisibleTab.
+- src/message-policy.js:45 — giới hạn nguồn message.
+- manifest.json — activeTab, scripting và host permissions.
+
+Vấn đề:
+Chọn tab trong dashboard và gọi chrome.tabs.update không tự cấp activeTab cho tab đó. captureVisibleTab cần activeTab hợp lệ hoặc quyền phù hợp khác. Vì vậy một tab thông thường chưa từng cấp quyền có thể không quét được.
+
+Ngoài ra, công cụ có thử hỗ trợ HTTP/file nhưng message policy vẫn từ chối HTTP công khai và file://. Đây là giới hạn trong code, tách biệt với những trang Chrome/Edge không cho extension truy cập.
+
+Yêu cầu sửa:
+- Chọn và triển khai luồng cấp quyền theo đúng API của trình duyệt; nếu cần đổi mô hình quyền hoặc UX, phải xác nhận cách làm trước.
+- Không coi chuyển tab hoặc bấm nút trên dashboard là bằng chứng đã được cấp activeTab.
+- Chỉ mở quyền cần thiết cho QR; không tự nới quyền autofill, lưu mật khẩu hoặc quyền đọc dữ liệu nhạy cảm.
+- Thống nhất các giao thức được công cụ quét hỗ trợ với chính sách message và quyền trình duyệt thực tế.
+- Thử quét trên các trang trình duyệt cho phép; nếu bị chặn phải thông báo rõ bằng Việt/Anh, không im lặng.
+- Không cam kết quét được trên mọi trang nội bộ hoặc trang đặc biệt mà Chrome/Edge cấm.
+- Không đóng dashboard hoặc bỏ người dùng ở trạng thái không có thông báo khi quét thất bại.
+
+Tiêu chí nghiệm thu:
+- Kiểm thử từ profile sạch: mở dashboard trực tiếp, chọn tab chưa có activeTab rồi thực hiện luồng quét được thiết kế.
+- QR được đọc và lưu đúng vào vault dùng chung khi có đủ quyền.
+- Kiểm tra HTTPS, HTTP công khai, localhost và file:// nếu được hỗ trợ; với file:// phải xét cả thiết lập cho phép truy cập file của trình duyệt.
+- Kiểm tra trang nội bộ, trang Store, tab đã đóng hoặc đã điều hướng; lỗi phải rõ ràng.
+- Kiểm tra tab bị đổi trong lúc quét để không chụp nhầm tab.
+- Kiểm tra cả popup và dashboard, QR otpauth thông thường và Google Authenticator migration v1/v2.
+
+2.2. P2 — Notes gửi lặp và đóng nhầm drawer mới
+---------------------------------------------
+Vị trí tham chiếu: src/ui/options.js:885.
+
+Hiện tượng đã tái hiện:
+- Bấm Save hai lần khi tạo note mới có thể tạo hai bản ghi.
+- Đang lưu note A, đóng rồi mở note B; kết quả lưu A trả về muộn có thể đóng drawer B và làm mất bản nháp chưa lưu trên giao diện.
+
+Yêu cầu sửa:
+- Chặn gửi Save lặp trong lúc yêu cầu đang xử lý.
+- Gắn kết quả lưu với đúng phiên drawer/note đã phát sinh yêu cầu.
+- Kết quả cũ không được ghi trạng thái hoặc đóng drawer của bản nháp mới.
+- Giữ đúng hành vi Cancel: không tạo yêu cầu lưu mới và không sửa dữ liệu đã lưu. Cancel không được mô tả là hoàn tác một yêu cầu đã gửi thành công nếu hệ thống không hỗ trợ hủy yêu cầu đó.
+- Khi lỗi, giữ nội dung phù hợp để người dùng có thể thử lại.
+
+Tiêu chí nghiệm thu:
+- Double-click Save chỉ tạo một yêu cầu/một note.
+- Kết quả lưu A về muộn không đóng hoặc thay nội dung B.
+- Test thành công, lỗi, trả kết quả chậm và Cancel.
+
+2.3. P2 — Đổi Việt/Anh làm popup quay lại màn hình mở khóa
+-------------------------------------------------------
+Vị trí tham chiếu: src/ui/popup.js:1385.
+
+Vấn đề:
+Hàm cập nhật ngôn ngữ gọi lại authMode và reset trạng thái UI. Vault có thể vẫn mở trong background nhưng popup lại hiển thị màn hình mở khóa.
+
+Yêu cầu sửa:
+- Đổi ngôn ngữ chỉ cập nhật nội dung hiển thị, không tự thay đổi trạng thái đăng nhập/mở khóa.
+- Giữ màn hình hoặc tab đang xem nếu trạng thái thực tế vẫn hợp lệ.
+- Nếu vault thực sự đã bị khóa ở background, vẫn phải phản ánh trạng thái khóa đúng; không giữ màn hình mở chỉ vì muốn tránh reset UI.
+
+Tiêu chí nghiệm thu:
+- Đổi Việt → Anh → Việt khi đang mở vault không yêu cầu mở khóa lại.
+- Kiểm tra khi chưa đăng nhập, đã đăng nhập nhưng khóa và đã mở khóa.
+- Các mã OTP/dữ liệu đang hiển thị cập nhật bình thường sau đổi ngôn ngữ.
+
+2.4. P2 — Đăng xuất còn sót danh tính tài khoản legacy
+----------------------------------------------------
+Vị trí tham chiếu:
+- src/auth/firebase-auth.js:83 — có fallback đọc aegisGoogleUser.
+- src/auth/firebase-auth.js:303 — đăng xuất chỉ xóa trạng thái tài khoản mới.
+
+Vấn đề:
+Profile nâng cấp từ bản cũ có thể còn aegisGoogleUser. Sau đăng xuất, hàm đọc tài khoản vẫn trả về danh tính cũ.
+
+Phạm vi tác động đã xác nhận:
+Đây là lỗi trạng thái danh tính. Token đã được xóa và vault được khóa; chưa xác định đây là lỗi vượt qua mở khóa vault.
+
+Yêu cầu sửa:
+- Đăng xuất phải dọn cả trạng thái tài khoản hiện tại và legacy liên quan.
+- Giữ việc xóa token và khóa vault.
+- Không xóa dữ liệu vault mã hóa hoặc backup chỉ để dọn trạng thái đăng nhập.
+
+Tiêu chí nghiệm thu:
+- Profile chỉ có khóa mới, chỉ có khóa cũ hoặc có cả hai đều đăng xuất hoàn toàn.
+- Đọc lại danh tính sau đăng xuất trả về không có tài khoản.
+- Vault mã hóa vẫn còn và có thể mở lại sau đăng nhập đúng tài khoản.
+
+
+3. THU HẸP PHẢN HỒI OTP VÀ TRUYỀN NGÔN NGỮ CHO CONTENT SCRIPT
+===========================================================
+
+3.1. P2 — Không trả toàn bộ OTP secret về công cụ quét trên website
+------------------------------------------------------------------
+Vị trí tham chiếu:
+- src/background.js:650 — phản hồi SAVE_QR_URI có otpAccounts.
+- src/message-policy.js:13 — content script được gọi SAVE_QR_URI.
+
+Vấn đề:
+Phản hồi hiện có thể chứa toàn bộ danh sách OTP đã giải mã, gồm cả secret không liên quan đến QR vừa quét. Content script chỉ cần biết thành công/thất bại, số mã được nhập và dữ liệu tóm tắt cần thiết.
+
+Chưa có bằng chứng JavaScript của website đọc trực tiếp được phản hồi trong isolated world. Không diễn giải phát hiện này thành việc website bất kỳ lấy được toàn bộ vault.
+
+Yêu cầu sửa:
+- Phân biệt caller là giao diện extension hay content script bằng context đã được background xác minh, không tin cờ tự khai trong payload.
+- Content script chỉ nhận phản hồi tối thiểu, không có seed/secret hoặc danh sách OTP không liên quan.
+- Giao diện popup/dashboard vẫn nhận dữ liệu cần thiết qua API dành cho trusted extension context.
+- Không đưa secret vào log, thông báo lỗi hay DOM của website.
+
+Tiêu chí nghiệm thu:
+- Test SAVE_QR_URI từ content context không chứa otpAccounts hoặc secret.
+- Test popup/dashboard vẫn cập nhật đúng danh sách sau import.
+- Các luồng QR đơn, nhiều tài khoản, trùng lặp và lỗi vẫn có thông báo đúng.
+
+3.2. P3 — Cấp ngôn ngữ cho content script qua API hẹp
+---------------------------------------------------
+Vị trí tham chiếu:
+- src/auth/firebase-auth.js:63 — storage giới hạn TRUSTED_CONTEXTS.
+- src/content/content.js:337 — đọc ngôn ngữ trực tiếp.
+- src/content/qr-selector.js:40 — đọc ngôn ngữ trực tiếp.
+
+Vấn đề:
+Content script không được đọc storage bị giới hạn trusted contexts. Khi đọc thất bại, UI có thể rơi về tiếng Anh dù người dùng chọn tiếng Việt.
+
+Yêu cầu sửa:
+- Cung cấp ngôn ngữ qua message/API hẹp do background kiểm soát.
+- Chỉ trả giá trị ngôn ngữ hợp lệ, không trả các khóa storage khác.
+- Không hạ mức bảo vệ TRUSTED_CONTEXTS để sửa lỗi ngôn ngữ.
+- Không cung cấp API đọc storage tùy ý cho website/content script.
+- Xác định rõ ngôn ngữ được áp dụng khi mở công cụ mới hoặc khi đổi ngôn ngữ; không tự thêm cơ chế đồng bộ UI ngoài phạm vi đã thống nhất.
+
+Tiêu chí nghiệm thu:
+- Chọn tiếng Việt rồi mở công cụ trên website: hiển thị tiếng Việt.
+- Chọn tiếng Anh rồi mở lại: hiển thị tiếng Anh.
+- Khi background không phản hồi, fallback không làm công cụ treo.
+- Content script vẫn không đọc trực tiếp được vault, mật khẩu chính và auth token từ storage.
+
+
+4. PRIVACY POLICY VÀ KIỂM THỬ MÔI TRƯỜNG THẬT
+============================================
+
+4.1. Cập nhật chính sách quyền riêng tư đúng hành vi thực tế
+----------------------------------------------------------
+Vị trí tham chiếu:
+- PRIVACY_POLICY.md.
+- src/background.js:476 — tạm giữ dữ liệu đăng nhập để đề xuất lưu.
+- src/background.js:527 — chụp vùng tab đang hiển thị trước khi cắt QR.
+
+Yêu cầu nội dung:
+- Mô tả việc tạm xử lý username/password để hỗ trợ đề xuất lưu đăng nhập, kể cả thời điểm chưa lưu chính thức vào vault.
+- Nêu đúng nơi lưu tạm, mục đích và cơ chế hết hạn/dọn dữ liệu. Không khẳng định xóa chính xác sau N phút nếu code chỉ kiểm tra hết hạn khi đọc lại.
+- Phân biệt vault lưu lâu dài đã mã hóa với dữ liệu tạm dùng trong phiên trình duyệt.
+- Mô tả việc chụp toàn bộ vùng tab đang hiển thị rồi mới cắt vùng QR để xử lý local; không viết rằng chỉ các pixel trong vùng chọn được chụp.
+- Không khẳng định ảnh được upload nếu code không làm vậy; audit chưa thấy luồng upload ảnh chụp QR lên mạng.
+- Cập nhật bản Việt và Anh nhất quán.
+- Đảm bảo khai báo dữ liệu/quyền trên Store khớp với code và chính sách.
+- Chuẩn bị URL privacy policy công khai, truy cập được để điền vào Store. File trong repo không tự thay thế yêu cầu này.
+
+Tiêu chí nghiệm thu:
+- Đối chiếu từng mô tả với hành vi thực tế của bản build cuối.
+- URL mở được khi không đăng nhập tài khoản nhà phát triển.
+- Không tuyên bố đã có kiểm toán bảo mật độc lập hoặc được Store phê duyệt nếu chưa có.
+
+4.2. Kiểm thử Chrome và Edge thật
+--------------------------------
+Test tự động hiện đạt 147/147 tại thời điểm audit, nhưng phần lớn dùng mock. Kết quả đó không kiểm chứng được quyền tab thật, hộp thoại OAuth, clipboard, cài đặt trình duyệt hay hành vi service worker đầy đủ.
+
+Yêu cầu kiểm thử:
+- Ghi lại phiên bản Chrome/Edge và hệ điều hành dùng để test.
+- Test profile sạch và profile nâng cấp từ bản cũ với dữ liệu thử nghiệm.
+- Kiểm tra đăng nhập Google, tạo/mở/khóa vault, đăng xuất, mở lại trình duyệt.
+- Kiểm tra popup, dashboard, Notes, OTP, quét QR, import ảnh, copy mã và đổi Việt/Anh.
+- Kiểm tra autofill/lưu đăng nhập không bị hồi quy do thay đổi QR hoặc message policy.
+- Kiểm tra mất mạng, mở lại mạng và service worker được khởi động lại.
+- Kiểm tra backup/export/import trên vault thử nghiệm; xác minh số lượng và nội dung sau khôi phục.
+
+Tiêu chí nghiệm thu:
+- Không có lỗi runtime chưa xử lý trong service worker, popup, dashboard và content script ở các luồng đã test.
+- Lỗi quyền/mạng có thông báo rõ; không báo thành công giả.
+- Lưu lại bước thực hiện, kết quả mong đợi, kết quả thực tế và bằng chứng phù hợp, không ghi secret vào ảnh/log chia sẻ.
+
+4.3. Kiểm thử đồng bộ hai thiết bị hoặc hai profile độc lập
+----------------------------------------------------------
+Yêu cầu:
+- Dùng cùng tài khoản thử nghiệm trên hai môi trường độc lập.
+- Thử thêm/sửa dữ liệu ở A, đồng bộ sang B và ngược lại.
+- Thử hai bên sửa khi offline rồi online lại.
+- Tái hiện đúng chuỗi merge và nhánh cũ ở mục 1.1.
+- Kiểm tra thao tác xóa/khôi phục và đổi mật khẩu chính theo hành vi sản phẩm hiện có; không được làm mất hoặc tự phục hồi dữ liệu ngoài ý muốn.
+- Thử ngắt mạng giữa các bước và retry sau khi mở lại trình duyệt.
+
+Tiêu chí nghiệm thu:
+- Kết quả trên hai bên nhất quán theo quy tắc sync đã xác định.
+- Không mất dữ liệu mà UI từng báo lưu thành công; nếu có xung đột không tự giải quyết an toàn thì phải giữ dữ liệu và thông báo.
+- Không xóa pending work trước khi công việc tương ứng được xử lý thành công.
+
+4.4. Xác minh Firebase/OAuth production
+---------------------------------------
+Đây là phần CHƯA được xác minh chỉ bằng audit mã nguồn, không phải kết luận production đang bị cấu hình sai.
+
+Yêu cầu xác minh có kiểm soát:
+- Firestore Rules chỉ cho phép đúng UID truy cập dữ liệu của mình, bao gồm snapshot và mọi chunk liên quan.
+- Thử truy cập khi chưa đăng nhập và từ UID khác trên môi trường thử nghiệm; cả đọc và ghi phải bị chặn.
+- Google provider và OAuth client được cấu hình đúng.
+- Redirect URI khớp extension ID thực tế của bản phát hành trên Store.
+- Kiểm tra audience/trạng thái production của OAuth, tránh chỉ hoạt động với tài khoản nhà phát triển/tester khi phát hành cho công chúng.
+- Kiểm tra API restrictions phù hợp và cấu hình Firebase có trong gói build.
+- Không đưa service-account key, OAuth client secret, token hoặc private key vào gói.
+- Firebase web config/API key công khai và manifest public key không tự động được coi là lộ private key; đánh giá theo đúng loại cấu hình.
+
+Tiêu chí nghiệm thu:
+- Có kết quả test truy cập đúng UID/sai UID/chưa đăng nhập cho snapshot và chunk.
+- Đăng nhập và sync được bằng tài khoản thử nghiệm hợp lệ trên bản phát hành thử với extension ID đúng.
+- Không cần chỉnh trực tiếp dữ liệu production của người dùng để chứng minh các ca test.
+
+
+5. NÂNG PHIÊN BẢN VÀ KIỂM TRA GÓI PHÁT HÀNH SAU KHI XÁC MINH
+============================================================
+
+5.1. Điều kiện trước khi nâng bản và phát hành
+---------------------------------------------
+- Các lỗi thuộc phạm vi sửa đã được xử lý và có test hồi quy phù hợp.
+- npm run check đạt.
+- npm test đạt toàn bộ; thêm test cho các lỗi vừa sửa, không chỉ chạy lại 147 test cũ.
+- git diff --check không có lỗi khoảng trắng.
+- Hoàn tất các ca kiểm thử trình duyệt, hai thiết bị và cấu hình triển khai cần thiết.
+- Nếu còn lỗi hoặc ca chưa test, phải ghi rõ; không đánh dấu hoàn tất thay cho kết quả thực tế.
+
+5.2. Nâng phiên bản
+-------------------
+- Theo quy định dự án, chạy npm run bump hoặc scripts/bump-version.ps1 sau đợt cập nhật code đã hoàn tất và được xác minh.
+- Đảm bảo package.json và manifest.json luôn cùng phiên bản.
+- Nếu phiên bản gốc vẫn là 0.3.93 tại lúc nâng patch thì bản tiếp theo là 0.3.94; phải kiểm tra phiên bản thực tế trước khi chạy, không hạ hoặc ghi đè số phiên bản mới hơn.
+- Rà lại tài liệu có ghi phiên bản để tránh thông tin phát hành bị cũ.
+- Việc chỉ tạo tài liệu .txt này không đồng nghĩa đã sửa code hay cần đánh dấu hoàn tất bản sửa.
+
+5.3. Kiểm tra ZIP cuối cùng
+---------------------------
+- Kiểm tra script đóng gói trước khi chạy. Script hiện có thao tác xóa staging/archive cũ; cần xác nhận cụ thể trước khi xóa hoặc dùng đầu ra mới không ghi đè bản cũ.
+- Bảo đảm ZIP có manifest và đầy đủ src, thư viện vendor, icon, HTML/CSS/JS cùng cấu hình cần thiết.
+- Bảo đảm không có private key, file .pem/.key, token, dữ liệu vault, backup người dùng, ảnh chụp nhạy cảm, thư mục .git hoặc worktree/.claude ngoài ý muốn.
+- Không chỉ dựa vào kiểm tra đuôi .pem/.key: secret có thể nằm trong JSON/JS hoặc file khác.
+- firebase-config.js hiện được cung cấp ngoài Git; khi build từ clone sạch hoặc CI phải có bước cung cấp cấu hình đúng, không bỏ sót.
+- Xác minh mọi import/tài nguyên đều tồn tại trong chính gói phát hành, không chỉ trong working tree.
+- Cài thử từ nội dung gói cuối trên profile sạch và kiểm tra lại các luồng quan trọng.
+- Giữ bản gói và thông tin phiên bản đã kiểm thử để tránh upload nhầm gói cũ.
+
+Tiêu chí nghiệm thu cuối:
+- Phiên bản trong manifest/package/gói upload trùng nhau.
+- Gói tải được và hoạt động trên trình duyệt mục tiêu.
+- Không có dữ liệu nhạy cảm hoặc file phát triển thừa trong gói.
+- Privacy policy và khai báo Store khớp đúng bản build.
+- Chỉ gửi Store sau khi người phụ trách phát hành chấp thuận; audit không tự thay thế quyền phê duyệt đó và không bảo đảm Store sẽ duyệt.
+
+
+CHECKLIST TỔNG HỢP
+==================
+[x] Sửa danh tính/quan hệ commit sau merge; test tự động nhánh cũ không làm mất dữ liệu.
+[x] Sửa race chọn backup và cố định đúng payload khi xác nhận; test tự động đạt.
+[x] Sửa luồng quyền QR và lỗi Việt/Anh trong code; test mock đạt, test quyền trình duyệt thật vẫn ở dưới.
+[x] Save Notes không gửi lặp, kết quả cũ không đóng drawer mới; test tự động đạt.
+[x] Đổi ngôn ngữ không reset sai trạng thái popup; test tự động đạt.
+[x] Logout dọn cả danh tính legacy nhưng không xóa vault; test tự động đạt.
+[x] Phản hồi QR cho content script không chứa toàn bộ OTP secret; test tự động đạt.
+[x] Content script nhận ngôn ngữ qua API hẹp; giữ TRUSTED_CONTEXTS.
+[x] Privacy policy đã cập nhật mô tả dữ liệu đăng nhập tạm và chụp tab cho QR.
+[ ] Có URL privacy policy dùng được trên Store.
+[ ] Test Chrome/Edge thật trên profile sạch và nâng cấp.
+[ ] Test đồng bộ live hai thiết bị, offline/retry và chuỗi xung đột.
+[ ] Xác minh Firestore Rules và OAuth cho bản phát hành.
+[x] Syntax check, 233/233 test và kiểm tra diff đạt.
+[x] Nâng patch, manifest/package đồng nhất 0.3.94.
+[x] Kiểm tra nội dung, integrity, imports và checksum ZIP cuối.
+[ ] Cài thử và nghiệm thu đúng gói cuối trên Chrome/Edge.
+[x] Ghi rõ các giới hạn/chưa kiểm thử còn lại trước quyết định phát hành.
+
+TÀI LIỆU ĐỐI CHIẾU
+===================
+Chrome activeTab:
+https://developer.chrome.com/docs/extensions/develop/concepts/activeTab
+
+Chrome tabs.captureVisibleTab:
+https://developer.chrome.com/docs/extensions/reference/api/tabs#method-captureVisibleTab
+
+Chrome Web Store privacy policies:
+https://developer.chrome.com/docs/webstore/program-policies/privacy

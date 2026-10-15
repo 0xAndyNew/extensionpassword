@@ -14,6 +14,8 @@ import {
   unlockVault,
   hasVault,
   manualSyncVault,
+  compareVaultSnapshots,
+  legacyCommitIdForMetadata,
   __resetVaultCacheForTests
 } from '../src/vault/repository.js';
 
@@ -357,6 +359,215 @@ test('two same-revision device branches auto-merge and upload the union', async 
   const ids = mergedData.credentials.map(c => c.id);
   assert.ok(ids.includes('device-a'), 'merged vault must contain device-a credential');
   assert.ok(ids.includes('device-b'), 'merged vault must contain device-b credential');
+});
+
+function mergeBranches({ legacy = false, fullLineage = false } = {}) {
+  const base = {
+    schemaVersion: 3,
+    vaultId: 'merge-regression-vault',
+    revision: 8,
+    commitId: 'merge-branch-a',
+    ancestors: fullLineage
+      ? Array.from({ length: 32 }, (_, index) => `merge-history-${index}`)
+      : ['merge-shared-root'],
+    updatedAt: '2026-07-28T00:00:00.000Z'
+  };
+  const remote = vaultData(base, 'branch-a');
+  const local = vaultData({
+    ...base,
+    revision: 11,
+    commitId: 'merge-branch-b',
+    ancestors: fullLineage
+      ? Array.from({ length: 32 }, (_, index) => `local-history-${index}`)
+      : ['merge-shared-root']
+  }, 'branch-b');
+  if (legacy) {
+    local._meta.schemaVersion = 2;
+    delete local._meta.commitId;
+    delete local._meta.ancestors;
+  }
+  return { remote, local };
+}
+
+async function runMergePath(path, localEnvelope) {
+  if (path === 'upload') return syncToFirestore(googleSub, localEnvelope, { password });
+  if (path === 'download') return syncFromFirestore(googleSub, password);
+  await syncFromFirestore(googleSub);
+  return adoptStagedRemote(googleSub, password);
+}
+
+function assertCredentialUnion(data, expected = ['branch-a', 'branch-b']) {
+  assert.deepEqual(data.credentials.map(item => item.id).sort(), [...expected].sort());
+}
+
+for (const path of ['upload', 'download', 'adoption']) {
+  for (const staleDirection of ['upload', 'download']) {
+    test(`${path} merge has two fresh parents and survives stale A descendant ${staleDirection}`, async t => {
+      const branches = mergeBranches();
+      const localEnvelope = await createEnvelope(branches.local, password);
+      const drive = { envelope: await createEnvelope(branches.remote, password), etag: 'merge-etag' };
+      const environment = mockEnvironment(t, drive);
+      const key = `aegisVault_${googleSub}`;
+      await environment.local.set({ [key]: localEnvelope });
+
+      const result = await runMergePath(path, localEnvelope);
+      assert.equal(result.ok, true);
+      const mergedEnvelope = environment.local.values.get(key);
+      const merged = await openEnvelope(mergedEnvelope, password);
+      assertCredentialUnion(merged);
+      assert.notEqual(merged._meta.commitId, branches.remote._meta.commitId);
+      assert.notEqual(merged._meta.commitId, branches.local._meta.commitId);
+      assert.equal(merged._meta.revision, 12);
+      assert.deepEqual(merged._meta.ancestors.slice(0, 2), ['merge-branch-a', 'merge-branch-b']);
+      assert.equal(compareVaultSnapshots({ data: merged }, { data: branches.remote }), 1);
+      assert.equal(compareVaultSnapshots({ data: merged }, { data: branches.local }), 1);
+      assert.deepEqual(await openEnvelope(drive.envelope, password), merged);
+      assert.equal(environment.getPatchCount(), 1, 'all merge paths must acknowledge the union');
+      if (path === 'adoption') {
+        assert.equal(environment.local.values.get(`${key}_pre_cloud_recovery`).envelope.payload, localEnvelope.payload);
+      }
+
+      const staleDescendant = structuredClone(branches.remote);
+      staleDescendant._meta = {
+        ...staleDescendant._meta,
+        revision: 99,
+        commitId: 'stale-a-descendant',
+        ancestors: ['merge-branch-a', ...branches.remote._meta.ancestors]
+      };
+      const staleEnvelope = await createEnvelope(staleDescendant, password);
+      if (staleDirection === 'download') {
+        drive.envelope = staleEnvelope;
+        drive.metaFields = null;
+        drive.etag = 'stale-descendant-etag';
+      } else {
+        await environment.local.set({ [key]: staleEnvelope });
+      }
+      const retry = staleDirection === 'download'
+        ? await syncFromFirestore(googleSub, password)
+        : await syncToFirestore(googleSub, staleEnvelope, { password });
+      assert.equal(retry.ok, true);
+      assertCredentialUnion(await openEnvelope(environment.local.values.get(key), password));
+      assertCredentialUnion(await openEnvelope(drive.envelope, password));
+      if (staleDirection === 'upload') {
+        // Restore device A's saved merged snapshot, then download the version
+        // published by device B's real conditional upload of its stale branch.
+        await environment.local.set({ [key]: mergedEnvelope });
+        __resetVaultCacheForTests();
+        const downloaded = await syncFromFirestore(googleSub, password);
+        assert.equal(downloaded.ok, true);
+        assertCredentialUnion(await readVault(password, googleSub));
+      }
+    });
+  }
+}
+
+for (const path of ['upload', 'download', 'adoption']) {
+  test(`${path} merge caps ancestry after preserving both direct parents and legacy identity`, async t => {
+    const branches = mergeBranches({ legacy: true, fullLineage: true });
+    const localEnvelope = await createEnvelope(branches.local, password);
+    const drive = { envelope: await createEnvelope(branches.remote, password), etag: 'lineage-cap-etag' };
+    const environment = mockEnvironment(t, drive);
+    await environment.local.set({ [`aegisVault_${googleSub}`]: localEnvelope });
+    const result = await runMergePath(path, localEnvelope);
+    assert.equal(result.ok, true);
+    const merged = await openEnvelope(drive.envelope, password);
+    assert.equal(merged._meta.ancestors.length, 32);
+    assert.equal(new Set(merged._meta.ancestors).size, 32);
+    assert.deepEqual(merged._meta.ancestors.slice(0, 2), [
+      'merge-branch-a', legacyCommitIdForMetadata(branches.local._meta)
+    ]);
+    assert.equal(compareVaultSnapshots({ data: merged }, { data: branches.local }), 1);
+  });
+
+  for (const failure of ['offline', '412']) {
+    test(`${path} merge retains local union and journals after ${failure}, then safely retries`, async t => {
+      const branches = mergeBranches();
+      const localEnvelope = await createEnvelope(branches.local, password);
+      let failed = false;
+      const drive = {
+        envelope: await createEnvelope(branches.remote, password),
+        etag: 'failure-before-etag',
+        async onPatch({ drive: current }) {
+          if (failed) return null;
+          failed = true;
+          if (failure === 'offline') throw new Error('merged upload offline');
+          const competing = vaultData({
+            ...branches.remote._meta,
+            commitId: 'competing-branch-c',
+            ancestors: ['merge-branch-a']
+          }, 'branch-c');
+          current.envelope = await createEnvelope(competing, password);
+          current.etag = 'failure-after-etag';
+          return response({ error: 'precondition' }, { status: 412 });
+        }
+      };
+      const environment = mockEnvironment(t, drive);
+      const key = `aegisVault_${googleSub}`;
+      await environment.local.set({ [key]: localEnvelope });
+      const first = await runMergePath(path, localEnvelope);
+      assert.equal(first.ok, false);
+      assert.notEqual(first.status.state, 'synced');
+      assert.equal(first.status.reason, failure === 'offline' ? 'upload-pending' : 'etag-mismatch');
+      const savedUnion = await openEnvelope(environment.local.values.get(key), password);
+      assertCredentialUnion(savedUnion);
+      const pending = environment.local.values.get(`${key}_pending_upload`);
+      assert.equal(pending.localCommitId, savedUnion._meta.commitId);
+      assert.equal(pending.baseRemoteCommitId, branches.remote._meta.commitId);
+      if (path !== 'upload' || failure === '412') {
+        assert.ok(environment.local.values.get(`${key}_remote_staging`));
+      }
+      if (path === 'adoption') {
+        assert.equal(environment.local.values.get(`${key}_pre_cloud_recovery`).envelope.payload, localEnvelope.payload);
+      }
+
+      const retry = await manualSyncVault(password, googleSub);
+      assert.equal(retry.ok, true);
+      assert.equal(retry.status.state, 'synced');
+      const expected = failure === '412' ? ['branch-a', 'branch-b', 'branch-c'] : ['branch-a', 'branch-b'];
+      assertCredentialUnion(await openEnvelope(environment.local.values.get(key), password), expected);
+      assertCredentialUnion(await openEnvelope(drive.envelope, password), expected);
+      assert.equal(environment.local.values.has(`${key}_pending_upload`), false);
+      assert.equal(environment.local.values.has(`${key}_remote_staging`), false);
+      assert.equal(environment.getPatchCount(), 2);
+    });
+  }
+}
+
+test('adoption returns the saved union when its upload preflight discovers another branch', async t => {
+  const branches = mergeBranches();
+  const localEnvelope = await createEnvelope(branches.local, password);
+  const remoteEnvelope = await createEnvelope(branches.remote, password);
+  const competing = vaultData({
+    ...branches.remote._meta,
+    commitId: 'adopt-preflight-branch-c',
+    ancestors: ['merge-branch-a']
+  }, 'branch-c');
+  const competingEnvelope = await createEnvelope(competing, password);
+  let mediaReads = 0;
+  const drive = {
+    envelope: remoteEnvelope,
+    etag: 'adopt-before-etag',
+    onMedia({ drive: current }) {
+      mediaReads += 1;
+      // Staging and adoption each list/read the old remote, then upload lists
+      // the changed remote. The new version must be merged into returned data.
+      if (mediaReads === 5) {
+        current.envelope = competingEnvelope;
+        current.etag = 'adopt-preflight-etag';
+      }
+      return null;
+    }
+  };
+  const environment = mockEnvironment(t, drive);
+  const key = `aegisVault_${googleSub}`;
+  await environment.local.set({ [key]: localEnvelope });
+  await syncFromFirestore(googleSub);
+  const adopted = await adoptStagedRemote(googleSub, password);
+  assert.equal(adopted.ok, true);
+  assertCredentialUnion(adopted.data, ['branch-a', 'branch-b', 'branch-c']);
+  assert.deepEqual(adopted.data, await openEnvelope(environment.local.values.get(key), password));
+  assert.deepEqual(adopted.data, await openEnvelope(drive.envelope, password));
+  assert.equal(environment.local.values.get(`${key}_pre_cloud_recovery`).envelope.payload, localEnvelope.payload);
 });
 
 test('an ETag race stages the re-read competing snapshot instead of overwriting it', async t => {

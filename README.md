@@ -2,7 +2,7 @@
 
 Aegis Vault là tiện ích quản lý mật khẩu và mã OTP dành cho Google Chrome và Microsoft Edge Chromium. Dữ liệu được lưu local-first, mã hóa trước khi ghi xuống thiết bị hoặc đồng bộ lên Firebase Cloud Firestore.
 
-Phiên bản hiện tại: `0.3.91`.
+Phiên bản hiện tại: `0.3.94`.
 
 ## Trạng thái dự án
 
@@ -156,7 +156,7 @@ Mã nguồn hiện chấp nhận tối thiểu 6 ký tự để tương thích d
 
 - Thêm thủ công bằng Base32 hoặc URI `otpauth://`.
 - Import ảnh QR từ popup.
-- Khoanh vùng QR trên trang đang mở.
+- Khoanh vùng QR trên trang đang mở. Từ dashboard: chọn tab, chuyển sang tab đó rồi bấm biểu tượng tiện ích trong 60 giây để trình duyệt cấp `activeTab`; giữ dashboard mở. Trang hệ thống/Store có thể bị trình duyệt chặn; `file://` phụ thuộc thiết lập cho phép truy cập file.
 - Click mã OTP để sao chép.
 - Kéo thẻ OTP để thay đổi thứ tự.
 

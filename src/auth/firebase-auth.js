@@ -303,8 +303,8 @@ export async function signInWithFirebase() {
 export async function signOutFirebase() {
   await ensureTrustedStorageAccess();
   await clearTokens();
-  await chrome.storage.local.remove(AUTH_KEY).catch(() => null);
-  await chrome.storage.session.remove(AUTH_KEY).catch(() => null);
+  await chrome.storage.local.remove([AUTH_KEY, 'aegisGoogleUser']).catch(() => null);
+  await chrome.storage.session.remove([AUTH_KEY, 'aegisGoogleUser']).catch(() => null);
 }
 
 export const signOutGoogle = signOutFirebase;

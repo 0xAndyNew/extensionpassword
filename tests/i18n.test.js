@@ -102,6 +102,19 @@ test('localizeText prevents dynamic Vietnamese UI and background errors leaking 
   await setLanguage('en');
 });
 
+test('QR target and pending-sync errors retain actionable English and Vietnamese details', () => {
+  const pairs = [
+    ['Trang cần quét đã thay đổi; vui lòng chọn lại vùng QR.', 'The page to scan changed; please select the QR region again.'],
+    ['Chưa thể hợp nhất thay đổi local với bản Firestore.', 'Could not merge local changes with Firestore yet.'],
+    ['Chưa thể tải thay đổi local lên Firestore.', 'Could not upload local changes to Firestore yet.'],
+    ['Firestore đang thay đổi liên tục; dữ liệu vẫn an toàn trên máy và sẽ tự thử lại.', 'Firestore keeps changing; your data is safe locally and synchronization will retry.']
+  ];
+  for (const [vi, en] of pairs) {
+    assert.equal(localizeRuntimeText(vi, 'en'), en);
+    assert.equal(localizeRuntimeText(en, 'vi'), vi);
+  }
+});
+
 test('runtime fallback blocks untranslated Vietnamese without modifying user data in the DOM translator', () => {
   const userText = 'Tài khoản của Nguyễn';
   assert.equal(localizeText(userText, 'en'), userText);

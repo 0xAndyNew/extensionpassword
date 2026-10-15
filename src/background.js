@@ -16,8 +16,10 @@ import {
   resolveSyncConflict,
   adoptStagedRemote,
   adoptStagedRemoteIfPresent,
-  exportPreCloudRecovery
+  exportPreCloudRecovery,
+  validateVaultData
 } from './vault/repository.js';
+import { createEnvelope, openEnvelope } from './vault/crypto.js';
 import { matchesOrigin, normalizeOrigin } from './vault/domain-policy.js';
 import { parseLastPassCsv, serializeLastPassCsv } from './vault/csv.js';
 import { getLanguage, localizeRuntimeText } from './i18n.js';
@@ -31,10 +33,12 @@ import {
   parseAuthenticatorText,
   serializeAuthenticatorText,
   parseOtpAuthUri,
+  parseOtpQrUri,
   normalizeSecret,
   reorderOtpAccounts
 } from './vault/totp.js';
 import { authorizeMessage } from './message-policy.js';
+import { invalidateQrScanIntent } from './ui/qr-handoff.js';
 import { resolveTrustedCaptureOrigin } from './login-capture.js';
 import { abortActiveSyncRequests } from './vault/firestore-sync.js';
 import {
@@ -262,14 +266,51 @@ async function getPendingMutations(googleSub) {
     : operations;
 }
 
+async function pendingMutationSource(googleSub, password, fallback) {
+  const key = pendingMutationsKey(googleSub);
+  const stored = (await chrome.storage.local.get(key))[key];
+  if (stored?.sourceEnvelope) {
+    return validateVaultData(await openEnvelope(stored.sourceEnvelope, password), {
+      expectedGoogleSub: googleSub,
+      requireOwner: true
+    });
+  }
+  // Upgrade legacy journals before any sync can replace the local source.
+  const data = validateVaultData(fallback || await readVault(password, googleSub), {
+    expectedGoogleSub: googleSub,
+    requireOwner: true
+  });
+  await chrome.storage.local.set({
+    [key]: { ...stored, sourceEnvelope: await createEnvelope(data, password) }
+  });
+  return data;
+}
+
 async function appendPendingMutations(googleSub, operations) {
   const key = pendingMutationsKey(googleSub);
-  const next = coalescePendingMutations(await getPendingMutations(googleSub), operations);
+  const password = await getSessionPassword();
+  if (!password) throw new Error('Vault đang khóa.');
+  const latest = validateVaultData(await readVault(password, googleSub), {
+    expectedGoogleSub: googleSub,
+    requireOwner: true
+  });
+  const existing = await getPendingMutations(googleSub);
+  const replacing = operations.some(operation => operation.kind === 'replace-vault');
+  let source = latest;
+  if (existing.length && !replacing) {
+    const previous = await pendingMutationSource(googleSub, password, latest);
+    // A failed sync may have changed latest into a union. Preserve the original
+    // queued payloads, then overlay only the new edits using their latest values.
+    source = replayPendingMutations(latest, previous, existing);
+    source = replayPendingMutations(source, latest, operations);
+  }
+  const next = coalescePendingMutations(existing, operations);
   await chrome.storage.local.set({
     [key]: {
       version: PENDING_MUTATIONS_VERSION,
       updatedAt: new Date().toISOString(),
-      operations: next
+      operations: next,
+      sourceEnvelope: await createEnvelope(source, password)
     }
   });
   await scheduleAutomaticSyncRetry(1000);
@@ -446,6 +487,10 @@ async function resolveExtensionFillOrigin(message, context) {
 async function handle(rawMessage, context) {
   const message = rawMessage;
 
+  if (message.type === 'GET_UI_LANGUAGE') {
+    const stored = await chrome.storage.local.get('aegisLanguage');
+    return { language: stored.aegisLanguage === 'vi' ? 'vi' : 'en' };
+  }
   if (message.type === 'GOOGLE_STATUS') return { user: await getGoogleUser() };
   if (message.type === 'GOOGLE_SIGN_IN') {
     const previousUser = await getGoogleUser();
@@ -524,6 +569,14 @@ async function handle(rawMessage, context) {
       throw new Error('Trang cần quét không còn là tab đang hoạt động.');
     }
     const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    const currentTab = await chrome.tabs.get(context.tabId);
+    if (
+      !currentTab?.active
+      || currentTab.windowId !== tab.windowId
+      || currentTab.url !== tab.url
+    ) {
+      throw new Error('Trang cần quét đã thay đổi; vui lòng chọn lại vùng QR.');
+    }
     return { screenshot };
   }
   const user = await requireUser();
@@ -575,6 +628,8 @@ async function handle(rawMessage, context) {
       asText(message.password, 'Mật khẩu chính', { required: true, max: 4096 })
     );
     return {
+      ok: result.ok,
+      ...(result.ok === false ? { error: result.error || result.status?.error || 'Đồng bộ chưa hoàn tất.' } : {}),
       data: result.data,
       action: result.action,
       recoveryKey: result.recoveryKey,
@@ -601,68 +656,63 @@ async function handle(rawMessage, context) {
         throw new Error('Trang cần quét không còn là tab đang hoạt động.');
       }
     }
-    const parsed = parseOtpAuthUri(
+    const records = parseOtpQrUri(
       asText(message.uri, 'URI OTP', { required: true, max: 16384 })
     );
-    if (!parsed.issuer && !parsed.account) {
-      throw new Error('Mã QR không có tên dịch vụ hoặc tài khoản.');
-    }
-
-    const otpAccounts = Array.isArray(vault.otpAccounts) ? vault.otpAccounts : [];
-    const existing = otpAccounts.find(item => otpIdentity(item) === otpIdentity(parsed));
-    if (existing) {
-      await chrome.storage.session.set({
-        [OPEN_OTP_TAB_SESSION_KEY]: true,
-        [LAST_QR_SAVED_SESSION_KEY]: {
-          id: existing.id,
-          issuer: existing.issuer || '',
-          account: existing.account || '',
-          duplicate: true
-        }
-      });
-      await setQrActionBadge({
-        success: true,
-        title: 'Mã OTP này đã có trong Aegis Vault'
-      });
-      return {
-        savedId: existing.id,
-        duplicate: true,
-        otp: { issuer: existing.issuer || '', account: existing.account || '' }
-      };
-    }
-
+    const otpAccounts = Array.isArray(vault.otpAccounts) ? [...vault.otpAccounts] : [];
+    const addedItems = [];
+    const matchedItems = [];
     const now = new Date().toISOString();
-    const savedItem = {
-      id: crypto.randomUUID(),
-      ...parsed,
-      createdAt: now,
-      updatedAt: now
-    };
-    otpAccounts.push(savedItem);
-    vault.otpAccounts = otpAccounts;
-    await writeVaultLocal(vault, password, user.sub);
-    await appendPendingMutations(user.sub, [{ kind: 'otp-upsert', id: savedItem.id }]);
-    await rememberPendingQrSync(savedItem.id);
-    await scheduleDeferredQrSync();
+    for (const parsed of records) {
+      const existing = otpAccounts.find(item => otpIdentity(item) === otpIdentity(parsed));
+      if (existing) {
+        matchedItems.push(existing);
+        continue;
+      }
+      const savedItem = {
+        id: crypto.randomUUID(),
+        ...parsed,
+        createdAt: now,
+        updatedAt: now
+      };
+      otpAccounts.push(savedItem);
+      addedItems.push(savedItem);
+      matchedItems.push(savedItem);
+    }
+    const duplicate = addedItems.length === 0;
+    const savedItem = addedItems[0] || matchedItems[0];
+    if (!duplicate) {
+      vault.otpAccounts = otpAccounts;
+      await writeVaultLocal(vault, password, user.sub);
+      await appendPendingMutations(user.sub, addedItems.map(item => ({ kind: 'otp-upsert', id: item.id })));
+      for (const item of addedItems) await rememberPendingQrSync(item.id);
+      await scheduleDeferredQrSync();
+    }
     await chrome.storage.session.set({
       [OPEN_OTP_TAB_SESSION_KEY]: true,
       [LAST_QR_SAVED_SESSION_KEY]: {
         id: savedItem.id,
         issuer: savedItem.issuer || '',
         account: savedItem.account || '',
-        duplicate: false
+        duplicate
       }
     });
     await setQrActionBadge({
       success: true,
-      title: 'Đã lưu mã OTP vào Aegis Vault'
+      title: duplicate ? 'Mã OTP này đã có trong Aegis Vault' : 'Đã lưu mã OTP vào Aegis Vault'
     });
     return {
       savedId: savedItem.id,
-      otpAccounts,
+      savedIds: addedItems.map(item => item.id),
+      importedCount: addedItems.length,
+      duplicateCount: records.length - addedItems.length,
+      duplicate,
+      ...(context.kind === 'extension' ? { otpAccounts } : {}),
       otp: { issuer: savedItem.issuer || '', account: savedItem.account || '' },
-      syncStatus: { state: 'pending', direction: 'upload' },
-      queueAutomaticSync: true
+      ...(!duplicate ? {
+        syncStatus: { state: 'pending', direction: 'upload' },
+        queueAutomaticSync: true
+      } : {})
     };
   }
 
@@ -1239,9 +1289,16 @@ async function handle(rawMessage, context) {
       ? asText(message.password, 'Mật khẩu bản Firestore', { required: true, max: 4096 })
       : password;
     const result = await resolveSyncConflict(user.sub, resolutionPassword, 'use-cloud');
-    return { status: result.status, action: result.action };
+    return {
+      ok: result.ok,
+      ...(result.ok === false ? { error: result.error || result.status?.error || 'Đồng bộ chưa hoàn tất.' } : {}),
+      status: result.status,
+      action: result.action
+    };
   }
   if (message.type === 'CHANGE_PASSWORD') {
+    // Do not orphan an encrypted pending source under the old password.
+    await syncPendingLocalMutations(user, password);
     const changeResult = await changeMasterPassword(
       asText(message.currentPassword, 'Mật khẩu hiện tại', { required: true, max: 4096 }),
       asText(message.newPassword, 'Mật khẩu mới', { required: true, max: 4096 }),
@@ -1275,7 +1332,12 @@ async function handleWithAutomaticSync(message, context) {
   }
 
   try {
-    await adoptStagedRemoteIfPresent(user.sub, password);
+    const adopted = await adoptStagedRemoteIfPresent(user.sub, password);
+    if (adopted?.ok === false) {
+      const error = new Error(adopted.error || adopted.status?.error || 'Đồng bộ chưa hoàn tất.');
+      error.syncStatus = adopted.status;
+      throw error;
+    }
   } catch (error) {
     if (message.type !== 'STATUS') throw error;
     await lockVault();
@@ -1288,14 +1350,14 @@ async function handleWithAutomaticSync(message, context) {
   } catch (error) {
     if (error?.code !== 'SYNC_CONFLICT_PENDING') throw error;
     const adopted = await adoptStagedRemoteIfPresent(user.sub, password);
-    if (!adopted) throw error;
+    if (!adopted || adopted.ok === false) throw error;
     return handle(message, context);
   }
 
   const syncState = String(result?.syncStatus?.state || '').toLowerCase();
   if (!['conflict', 'staged'].includes(syncState)) return result;
   const adopted = await adoptStagedRemoteIfPresent(user.sub, password);
-  return adopted ? handle(message, context) : result;
+  return adopted && adopted.ok !== false ? handle(message, context) : result;
 }
 
 function normalizeOtpFields(message) {
@@ -1348,6 +1410,13 @@ function upsert(vault, credential) {
   }
 }
 
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  void invalidateQrScanIntent(tabId, changeInfo).catch(() => null);
+});
+chrome.tabs.onRemoved.addListener(tabId => {
+  void invalidateQrScanIntent(tabId).catch(() => null);
+});
+
 chrome.runtime.onMessage.addListener((rawMessage, sender, respond) => {
   let authorized;
   try {
@@ -1371,7 +1440,7 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, respond) => {
       const queueAutomaticSync = Boolean(result?.queueAutomaticSync);
       const publicResult = result && typeof result === 'object' ? { ...result } : {};
       delete publicResult.queueAutomaticSync;
-      
+
       if (queueAutomaticSync) {
         try {
           await enqueueMutation(runAutomaticSync);
@@ -1406,22 +1475,16 @@ async function syncPendingLocalMutations(user, password) {
   const operations = await getPendingMutations(user.sub);
   if (!operations.length) return false;
 
-  const localBeforeSync = await readVault(password, user.sub);
+  const localBeforeSync = await pendingMutationSource(user.sub, password);
   const maxMergeAttempts = 3;
   for (let attempt = 0; attempt < maxMergeAttempts; attempt += 1) {
     const sync = await manualSyncVault(password, user);
     const syncState = String(sync?.status?.state || '').toLowerCase();
-    const syncAction = String(sync?.action || '').toLowerCase();
-
-    if (sync?.ok && syncAction !== 'downloaded') {
-      await clearPendingMutations(user.sub);
-      await clearQrSyncCoveredBy(operations);
-      return true;
-    }
-
     if (['conflict', 'staged'].includes(syncState)) {
       const adopted = await adoptStagedRemoteIfPresent(user.sub, password);
-      if (!adopted) throw new Error('Chưa thể hợp nhất thay đổi local với bản Firestore.');
+      if (!adopted || adopted.ok === false) {
+        throw new Error(adopted?.error || adopted?.status?.error || 'Chưa thể hợp nhất thay đổi local với bản Firestore.');
+      }
     } else if (!sync?.ok) {
       throw new Error(sync?.error || sync?.status?.error || 'Chưa thể đồng bộ thay đổi local.');
     }
@@ -1429,17 +1492,19 @@ async function syncPendingLocalMutations(user, password) {
     const remoteVault = await readVault(password, user.sub);
     const mergedVault = replayPendingMutations(remoteVault, localBeforeSync, operations);
     const write = await writeVault(mergedVault, password, user.sub);
-    if (write?.sync?.ok !== false) {
+    const writeAction = String(write?.sync?.action || '').toLowerCase();
+    if (write?.sync?.ok === true && ['uploaded', 'unchanged'].includes(writeAction)) {
       await clearPendingMutations(user.sub);
       await clearQrSyncCoveredBy(operations);
       return true;
     }
 
     const writeState = String(write?.sync?.status?.state || '').toLowerCase();
+    if (write?.sync?.ok === true && ['merged', 'downloaded'].includes(writeAction)) continue;
     if (!['conflict', 'staged'].includes(writeState)) {
       throw new Error(
-        write.sync.error
-        || write.sync.status?.error
+        write?.sync?.error
+        || write?.sync?.status?.error
         || 'Chưa thể tải thay đổi local lên Firestore.'
       );
     }
@@ -1463,7 +1528,10 @@ async function runAutomaticSync() {
     const result = await manualSyncVault(password, user);
     const state = String(result?.status?.state || '').toLowerCase();
     if (['conflict', 'staged'].includes(state)) {
-      await adoptStagedRemoteIfPresent(user.sub, password);
+      const adopted = await adoptStagedRemoteIfPresent(user.sub, password);
+      if (adopted?.ok === false) {
+        throw new Error(adopted.error || adopted.status?.error || 'Đồng bộ tự động chưa hoàn tất.');
+      }
       return;
     }
     if (!result?.ok && !['conflict', 'staged'].includes(state)) {

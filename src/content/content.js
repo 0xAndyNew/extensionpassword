@@ -336,8 +336,8 @@
 
   async function getCaptureText() {
     try {
-      const stored = await chrome.storage.local.get(['aegisLanguage']);
-      return CAPTURE_TEXT[stored.aegisLanguage === 'vi' ? 'vi' : 'en'];
+      const response = await chrome.runtime.sendMessage({ type: 'GET_UI_LANGUAGE' });
+      return CAPTURE_TEXT[response?.ok && response.language === 'vi' ? 'vi' : 'en'];
     } catch {
       return CAPTURE_TEXT.en;
     }

@@ -1,8 +1,9 @@
-import { generateTotp, parseOtpAuthUri, serializeOtpAuthUri } from '../vault/totp.js';
+import { generateTotp, parseOtpAuthUri, parseOtpQrUri, serializeOtpAuthUri } from '../vault/totp.js';
 import qrcode from '../vendor/qrcode-generator.js';
 import '../vendor/jsqr.js';
 import { setSiteIcon } from './favicon.js';
 import { i18nInit, localizeRuntimeText, setLanguage, translateDocument, t } from '../i18n.js';
+import { consumeQrScanIntent, isQrScanTargetMatching } from './qr-handoff.js';
 
 
 const $ = id => document.getElementById(id);
@@ -24,6 +25,8 @@ let currentTabId = null;
 let signedIn = false;
 let applyingOtpUri = false;
 let vaultUnlocked = false;
+let authState = null;
+let popupClosed = false;
 let otpSaveInFlight = false;
 let vaultLoadGeneration = 0;
 const OPEN_OTP_TAB_SESSION_KEY = 'aegisOpenOtpOnNextPopup';
@@ -187,7 +190,7 @@ async function init() {
     $('authView').classList.add('hidden');
     $('vaultView').classList.add('hidden');
   }
-  
+
   // Khởi tạo các trình lắng nghe sự kiện của Password Generator
   initGenerator();
   initPasswordToggles();
@@ -221,10 +224,16 @@ function updateProfileUI(user) {
 }
 
 function authMode(exists, canCreate = true) {
+  authState = { exists, canCreate };
   vaultUnlocked = false;
   setAccountControls(signedIn);
   $('authView').classList.remove('hidden');
   $('vaultView').classList.add('hidden');
+  updateAuthLabels(exists, canCreate);
+}
+
+// Translation must not perform authentication or visibility transitions.
+function updateAuthLabels(exists, canCreate = true) {
   const creationBlocked = !exists && canCreate === false;
   $('authTitle').textContent = exists
     ? t('unlockVaultHeader', 'Unlock Secure Vault')
@@ -561,6 +570,7 @@ $('authButton').onclick = async () => {
     const r = await send({ type, password });
     if (r.ok) {
       await showVault();
+      await startPendingQrScan();
     } else {
       btn.disabled = false;
       btn.textContent = originalText;
@@ -801,7 +811,7 @@ function showOtpToast(message, tone = '') {
   else delete toast.dataset.tone;
   toast.classList.add('show');
   clearTimeout(toast.hideTimer);
-  toast.hideTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+  toast.hideTimer = setTimeout(() => toast.classList.remove('show'), tone === 'error' ? 3800 : 2200);
 }
 
 function stopOtpTimer() { if (otpTimer) clearInterval(otpTimer); otpTimer = null; }
@@ -1246,17 +1256,30 @@ $('otpQrFile').onchange = async event => {
   try {
     const file = event.target.files[0];
     if (!file) return;
-    $('otpFormStatus').textContent = 'Đang nhận diện ảnh QR…';
+    $('otpFormStatus').textContent = l('Reading QR image…', 'Đang nhận diện ảnh QR…');
     bitmap = await createImageBitmap(file);
     const result = await decodeQrFromSource(bitmap);
-    if (result?.data) acceptQr(result.data);
-    else {
+    if (result?.data) {
+      const records = parseOtpQrUri(result.data);
+      if (records.length > 1) {
+        await saveImportedQr(result.data);
+        closeOtpModal();
+      } else {
+        acceptQr(serializeOtpAuthUri(records[0]));
+      }
+    } else {
       $('otpFormStatus').textContent = '';
-      $('otpFormError').textContent = 'Không tìm thấy QR trong ảnh. Hãy chọn ảnh rõ và không bị cắt.';
+      $('otpFormError').textContent = l(
+        'No QR code was found in the image. Choose a clear, uncropped image.',
+        'Không tìm thấy QR trong ảnh. Hãy chọn ảnh rõ và không bị cắt.'
+      );
     }
   } catch (error) {
     $('otpFormStatus').textContent = '';
-    $('otpFormError').textContent = `Không đọc được ảnh QR: ${error.message}`;
+    $('otpFormError').textContent = l(
+      `Could not read the QR image: ${error.message}`,
+      `Không đọc được ảnh QR: ${error.message}`
+    );
   }
   finally {
     bitmap?.close();
@@ -1266,13 +1289,17 @@ $('otpQrFile').onchange = async event => {
 
 async function saveImportedQr(uri) {
   const response = await send({ type: 'SAVE_QR_URI', uri });
-  if (!response.ok) throw new Error(response.error || 'Không tự lưu được mã OTP.');
+  if (!response.ok) throw new Error(response.error || l('Could not save OTP automatically.', 'Không tự lưu được mã OTP.'));
   activeMainTab = 'otp';
   mainTabs.forEach(tab => $(tab.id).classList.toggle('active', tab.key === 'otp'));
   if (Array.isArray(response.otpAccounts)) otpAccounts = response.otpAccounts;
   render();
   showOtpToast(
-    response.duplicate ? 'Mã OTP này đã có trong Vault' : 'Đã quét xong và tự lưu OTP',
+    response.importedCount > 1
+      ? lf('Imported {count} OTP accounts', 'Đã nhập {count} tài khoản OTP', { count: response.importedCount })
+      : response.duplicate
+        ? l('This OTP code already exists in Vault', 'Mã OTP này đã có trong Vault')
+        : l('QR scanned and OTP saved automatically', 'Đã quét xong và tự lưu OTP'),
     'success'
   );
 }
@@ -1282,62 +1309,89 @@ $('headerQrFile').onchange = async event => {
   try {
     const file = event.target.files[0];
     if (!file) return;
-    showOtpToast('Đang nhận diện ảnh QR…');
+    showOtpToast(l('Reading QR image…', 'Đang nhận diện ảnh QR…'));
     bitmap = await createImageBitmap(file);
     const result = await decodeQrFromSource(bitmap);
     if (!result?.data) {
-      throw new Error('Không nhận diện được QR trong ảnh đã chọn.');
+      throw new Error(l('No QR code could be detected in the selected image.', 'Không nhận diện được QR trong ảnh đã chọn.'));
     }
     await saveImportedQr(result.data);
   } catch (error) {
-    showOtpToast(error?.message || 'Không import được ảnh QR.', 'error');
+    showOtpToast(error?.message || l('Could not import the QR image.', 'Không import được ảnh QR.'), 'error');
   } finally {
     bitmap?.close();
     event.target.value = '';
   }
 };
 
-async function scanVisibleTabForOtp(sourceButton = $('otpCameraBtn')) {
-  if (screenScanInFlight || otpSaveInFlight) return;
+async function currentScanTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tabs[0] || null;
+}
+
+async function assertScanTarget(target) {
+  if (popupClosed || !vaultUnlocked || !isQrScanTargetMatching(target, await currentScanTab())) throw new Error(l(
+    'The selected tab changed. Reopen the extension on the tab you want to scan.',
+    'Thẻ đã chọn đã thay đổi. Hãy mở lại tiện ích trên thẻ cần quét.'));
+}
+
+async function startPendingQrScan() {
+  if (!vaultUnlocked || popupClosed) return;
+  try {
+    const status = await send({ type: 'STATUS' });
+    if (!status?.ok || !status.unlocked || popupClosed) return;
+    const intent = await consumeQrScanIntent(await currentScanTab());
+    if (intent) await scanVisibleTabForOtp($('scanScreenMenuBtn'), intent);
+  } catch (error) {
+    showOtpToast(error?.message || l('Could not start QR scanning.', 'Không thể bắt đầu quét QR.'), 'error');
+  }
+}
+
+async function scanVisibleTabForOtp(sourceButton = $('otpCameraBtn'), expectedTarget = null) {
+  if (screenScanInFlight || otpSaveInFlight || !vaultUnlocked || popupClosed) return;
   screenScanInFlight = true;
   const scanButton = sourceButton;
-  const originalLabel = scanButton.textContent;
-  scanButton.disabled = true;
-  scanButton.textContent = 'Đang mở…';
-  $('otpFormError').textContent = '';
-  $('otpFormStatus').textContent = 'Đang mở công cụ khoanh vùng trên trang…';
-
+  const originalLabel = scanButton?.textContent;
   try {
-    const page = await activePageContext();
-    if (!page) {
-      throw new Error('Không xác định được trang cần quét.');
-    }
-    if (typeof chrome?.scripting?.executeScript !== 'function') {
-      throw new Error('Trình duyệt không hỗ trợ công cụ khoanh vùng QR.');
-    }
+    if (scanButton) { scanButton.disabled = true; scanButton.textContent = l('Opening…', 'Đang mở…'); }
+    $('otpFormError').textContent = '';
+    $('otpFormStatus').textContent = l(
+      'Opening the QR selection tool on the page…', 'Đang mở công cụ khoanh vùng trên trang…');
+    const tab = await currentScanTab();
+    const target = expectedTarget || (tab && { tabId: tab.id, windowId: tab.windowId, url: tab.url });
+    if (!target || !isQrScanTargetMatching(target, tab)) throw new Error(l(
+      'The selected tab changed. Reopen the extension on the tab you want to scan.',
+      'Thẻ đã chọn đã thay đổi. Hãy mở lại tiện ích trên thẻ cần quét.'));
+    const status = await send({ type: 'STATUS' });
+    if (!status?.ok || !status.unlocked) throw new Error(l('Vault is locked.', 'Vault đang bị khóa.'));
+    await assertScanTarget(target);
+    if (typeof chrome?.scripting?.executeScript !== 'function') throw new Error(l(
+      'The browser does not support QR region selection.', 'Trình duyệt không hỗ trợ công cụ khoanh vùng QR.'));
     await chrome.scripting.executeScript({
-      target: { tabId: page.tabId },
+      target: { tabId: target.tabId },
       files: ['src/vendor/jsqr.js', 'src/content/qr-selector.js']
     });
+    await assertScanTarget(target);
     window.close();
   } catch (error) {
     $('otpFormStatus').textContent = '';
-    $('otpFormError').textContent = /Cannot access|không thể truy cập/i.test(String(error?.message || ''))
-      ? 'Trình duyệt không cho phép khoanh vùng trên trang hệ thống này.'
-      : error?.message || 'Không thể mở công cụ khoanh vùng QR.';
+    const isSystemPage = /Cannot access|cannot be scripted|extensions gallery|missing host permission|chrome:\/\/|edge:\/\/|không thể truy cập/i.test(String(error?.message || ''));
+    const message = isSystemPage
+      ? l('The browser does not allow QR selection on this page.', 'Trình duyệt không cho phép khoanh vùng QR trên trang này.')
+      : error?.message || l('Could not open the QR selection tool.', 'Không thể mở công cụ khoanh vùng QR.');
+    $('otpFormError').textContent = message;
+    showOtpToast(message, 'error');
   } finally {
     screenScanInFlight = false;
-    if (!otpSaveInFlight) {
-      scanButton.disabled = false;
-      scanButton.textContent = originalLabel;
-    }
+    if (scanButton && !otpSaveInFlight) { scanButton.disabled = false; scanButton.textContent = originalLabel; }
   }
 }
+
 const otpCameraButton = $('otpCameraBtn');
-if (otpCameraButton) otpCameraButton.onclick = scanVisibleTabForOtp;
+if (otpCameraButton) otpCameraButton.onclick = () => { void scanVisibleTabForOtp(otpCameraButton); };
 const advancedSettingsButton = $('advancedSettingsBtn');
 if (advancedSettingsButton) advancedSettingsButton.onclick = async () => { await send({ type: 'OPEN_OPTIONS' }); window.close(); };
-window.addEventListener('unload',()=>{stopOtpTimer();});
+window.addEventListener('unload',()=>{popupClosed = true; stopOtpTimer();});
 
 function updateLangUI(lang) {
   activeLanguage = lang === 'vi' ? 'vi' : 'en';
@@ -1349,10 +1403,8 @@ function updateLangUI(lang) {
   if (enBtn) enBtn.classList.toggle('active', lang === 'en');
   translateDocument();
 
-  const authBtn = $('authButton');
-  if (authBtn && authBtn.dataset.exists !== undefined) {
-    const exists = authBtn.dataset.exists === 'true';
-    authMode(exists, !authBtn.disabled);
+  if (!vaultUnlocked && signedIn && authState && !$('authView').classList.contains('hidden')) {
+    updateAuthLabels(authState.exists, authState.canCreate);
   }
   if (!$('vaultView').classList.contains('hidden')) render();
 }
@@ -1412,6 +1464,7 @@ async function bootPopup() {
       mainTabs.forEach(tab => $(tab.id).classList.toggle('active', tab.key === 'otp'));
     }
     await init();
+    await startPendingQrScan();
   } catch (error) {
     $('authView').classList.add('hidden');
     $('vaultView').classList.add('hidden');

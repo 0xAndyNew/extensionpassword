@@ -1,6 +1,7 @@
 import { analyzeCredentials } from '../vault/password-security.js';
 import { generateTotp } from '../vault/totp.js';
 import { setSiteIcon } from './favicon.js';
+import { initOptionsOtp } from './options-otp.js';
 import { i18nInit, localizeRuntimeText, setLanguage, translateDocument, t } from '../i18n.js';
 
 
@@ -15,6 +16,11 @@ let managerCards = [];
 let managerIdentities = [];
 let managerTrash = [];
 let managerOtpAccounts = [];
+const optionsOtp = initOptionsOtp({
+  send,
+  getLanguage: () => activeLanguage,
+  onAccountsChanged: accounts => { managerOtpAccounts = accounts; }
+});
 let loginDetailTimer = null;
 let activeLoginDetail = null;
 let editingId = '';
@@ -27,6 +33,10 @@ let otpReadGeneration = 0;
 let securityReport = analyzeCredentials([]);
 let activeSecurityFilter = 'issues';
 let backupImportPayload = null;
+let backupReadGeneration = 0;
+let backupImportPending = false;
+let noteDrawerGeneration = 0;
+let noteSaveGeneration = null;
 let isSignedIn = false;
 let recoveryAvailable = false;
 const MAX_CSV_FILE_BYTES = 8 * 1024 * 1024;
@@ -73,6 +83,7 @@ function updateOptionsLangUI(lang) {
   const enBtn = $('optLangEnBtn');
   if (enBtn) enBtn.classList.toggle('active', lang === 'en');
   translateDocument();
+  optionsOtp.refreshLanguage();
   if (managerCredentials.length || managerNotes.length || managerCards.length || managerIdentities.length || managerTrash.length) {
     renderManager();
     renderNotes();
@@ -273,6 +284,7 @@ async function loadManager() {
     }
   }
 
+  optionsOtp.setAccounts(managerOtpAccounts);
   securityReport = analyzeCredentials(managerCredentials);
   renderManager();
   renderNotes();
@@ -671,9 +683,8 @@ function closeDrawer() {
   $('overlay').classList.remove('open');
   $('drawer').classList.remove('open');
   if ($('loginSaveResult')) $('loginSaveResult').textContent = '';
-  if ($('noteSaveResult')) $('noteSaveResult').textContent = '';
+  closeNoteDrawer();
   if ($('cardSaveResult')) $('cardSaveResult').textContent = '';
-  if ($('noteDrawer')) $('noteDrawer').classList.remove('open');
   if ($('cardDrawer')) $('cardDrawer').classList.remove('open');
 }
 
@@ -849,6 +860,9 @@ if ($('noteDetailModal')) $('noteDetailModal').onclick = event => {
 };
 
 function openNoteDrawer(item = null) {
+  noteDrawerGeneration += 1;
+  noteSaveGeneration = null;
+  $('noteDrawerSave').disabled = false;
   $('overlay').classList.add('open');
   $('noteDrawer').classList.add('open');
   if ($('noteSaveResult')) $('noteSaveResult').textContent = '';
@@ -866,13 +880,21 @@ function openNoteDrawer(item = null) {
 }
 
 function closeNoteDrawer() {
+  noteDrawerGeneration += 1;
+  noteSaveGeneration = null;
+  if ($('noteDrawerSave')) $('noteDrawerSave').disabled = false;
   $('overlay').classList.remove('open');
-  $('noteDrawer').classList.remove('open');
+  if ($('noteDrawer')) $('noteDrawer').classList.remove('open');
   if ($('noteSaveResult')) $('noteSaveResult').textContent = '';
 }
 
+if ($('noteDrawerCancel')) $('noteDrawerCancel').onclick = closeNoteDrawer;
+
 if ($('noteDrawerSave')) {
   $('noteDrawerSave').onclick = async () => {
+    const generation = noteDrawerGeneration;
+    if (noteSaveGeneration === generation) return;
+    const button = $('noteDrawerSave');
     const id = $('editNoteId').value;
     const title = $('editNoteTitle').value.trim();
     const notes = $('editNoteContent').value.trim();
@@ -882,18 +904,43 @@ if ($('noteDrawerSave')) {
       status.textContent = 'Vui lòng nhập tiêu đề hoặc nội dung ghi chú.';
       return;
     }
+    noteSaveGeneration = generation;
+    button.disabled = true;
     status.style.color = '#6b7280';
     status.textContent = 'Đang lưu…';
-    const res = await send({ type: 'SAVE_NOTE', id, title: title || 'Ghi chú mới', notes, favorite: false });
-    if (res.ok) {
-      status.style.color = '#22a65a';
-      status.textContent = '✓ Đã lưu ghi chú thành công.';
-      await loadManager();
-      await refreshSyncStatus(res.syncStatus);
-      setTimeout(closeNoteDrawer, 500);
-    } else {
-      status.style.color = '#e11d48';
-      status.textContent = `Không thể lưu: ${res.error || 'Lỗi không xác định.'}`;
+    let saved = false;
+    try {
+      const res = await send({ type: 'SAVE_NOTE', id, title: title || 'Ghi chú mới', notes, favorite: false });
+      if (res.ok) {
+        saved = true;
+        if (generation === noteDrawerGeneration) {
+          status.style.color = '#22a65a';
+          status.textContent = '✓ Đã lưu ghi chú thành công.';
+        }
+        await loadManager();
+        await refreshSyncStatus(res.syncStatus);
+        if (generation !== noteDrawerGeneration) return;
+        setTimeout(() => {
+          if (generation === noteDrawerGeneration) closeNoteDrawer();
+        }, 500);
+      } else if (generation === noteDrawerGeneration) {
+        status.style.color = '#e11d48';
+        status.textContent = `Không thể lưu: ${res.error || 'Lỗi không xác định.'}`;
+      }
+    } catch (error) {
+      if (generation === noteDrawerGeneration) {
+        status.style.color = saved ? '#b45309' : '#e11d48';
+        status.textContent = lf(
+          saved ? 'Note saved, but could not refresh Vault data or sync status: {error}' : 'Could not save: {error}',
+          saved ? 'Đã lưu ghi chú, nhưng không thể làm mới dữ liệu Vault hoặc trạng thái đồng bộ: {error}' : 'Không thể lưu: {error}',
+          { error: error?.message || l('Unknown error.', 'Lỗi không xác định.') }
+        );
+      }
+    } finally {
+      if (generation === noteDrawerGeneration && !saved) {
+        noteSaveGeneration = null;
+        button.disabled = false;
+      }
     }
   };
 }
@@ -1256,6 +1303,7 @@ if ($('emptyTrashBtn')) {
 // Sidebar Navigation
 const sections = {
   menuLogins: $('loginsSection'),
+  menuOtp: $('otpSection'),
   menuNotes: $('notesSection'),
   menuCards: $('cardsSection'),
   menuIdentity: $('identitySection'),
@@ -1281,7 +1329,8 @@ Object.keys(sections).forEach(menuId => {
     });
     $(menuId).classList.add('active');
     sections[menuId].classList.remove('hidden');
-    
+    optionsOtp.setActive(menuId === 'menuOtp');
+
     if (['menuLogins', 'menuNotes', 'menuCards'].includes(menuId)) {
       $('addBtn').classList.remove('hidden');
       if (menuId === 'menuLogins') $('subTabsBar').classList.remove('hidden');
@@ -1585,6 +1634,7 @@ $('recoveryExportButton').onclick = async () => {
 };
 
 $('backupFile').onchange = async event => {
+  const generation = ++backupReadGeneration;
   const file = event.target.files?.[0];
   backupImportPayload = null;
   $('backupFileName').textContent = file?.name || 'Chưa chọn tệp';
@@ -1601,25 +1651,32 @@ $('backupFile').onchange = async event => {
 
   try {
     const text = await file.text();
+    if (generation !== backupReadGeneration) return;
     if (!text.trim()) throw new Error('Tệp backup đang trống.');
     try {
       backupImportPayload = JSON.parse(text);
     } catch {
       backupImportPayload = text;
     }
-    $('backupImportButton').disabled = false;
+    $('backupImportButton').disabled = backupImportPending;
   } catch (error) {
+    if (generation !== backupReadGeneration) return;
+    backupImportPayload = null;
     $('backupImportResult').style.color = '#e11d48';
     $('backupImportResult').textContent = error?.message || 'Không thể đọc tệp backup.';
   }
 };
 
 $('backupImportButton').onclick = async () => {
+  if (backupImportPending) return;
+  const generation = backupReadGeneration;
+  const payload = backupImportPayload;
+  const fileName = $('backupFileName').textContent;
   const password = $('backupImportPassword').value;
   const result = $('backupImportResult');
   const button = $('backupImportButton');
   result.textContent = '';
-  if (!backupImportPayload) {
+  if (!payload) {
     result.style.color = '#e11d48';
     result.textContent = 'Hãy chọn tệp backup Aegis.';
     return;
@@ -1630,40 +1687,52 @@ $('backupImportButton').onclick = async () => {
     $('backupImportPassword').focus();
     return;
   }
-  const accepted = await confirmAction({
-    title: 'Khôi phục Vault?',
-    message: l('The file data will replace the current Vault and then sync again. Do you want to continue?', 'Dữ liệu trong tệp sẽ thay thế Vault hiện tại rồi được đồng bộ lại. Bạn có đồng ý tiếp tục không?'),
-    acceptText: 'Đồng ý khôi phục',
-    cancelText: 'Không khôi phục',
-    tone: 'restore'
-  });
-  if (!accepted) return;
-
+  backupImportPending = true;
   button.disabled = true;
-  button.textContent = 'Đang khôi phục…';
-  result.style.color = 'var(--apple-accent)';
-  result.textContent = 'Đang xác minh mật khẩu và khôi phục dữ liệu mã hóa…';
+  $('backupFile').disabled = true;
+  $('backupImportPassword').disabled = true;
   try {
+    const accepted = await confirmAction({
+      title: 'Khôi phục Vault?',
+      message: lf('Data from "{file}" will replace the current Vault and then sync again. Do you want to continue?', 'Dữ liệu từ tệp "{file}" sẽ thay thế Vault hiện tại rồi được đồng bộ lại. Bạn có đồng ý tiếp tục không?', { file: fileName }),
+      acceptText: 'Đồng ý khôi phục',
+      cancelText: 'Không khôi phục',
+      tone: 'restore'
+    });
+    if (!accepted) return;
+
+    button.textContent = 'Đang khôi phục…';
+    if (generation === backupReadGeneration) {
+      result.style.color = 'var(--apple-accent)';
+      result.textContent = 'Đang xác minh mật khẩu và khôi phục dữ liệu mã hóa…';
+    }
     const response = await send({
       type: 'IMPORT_ENCRYPTED_BACKUP',
       masterPassword: password,
-      backup: backupImportPayload
+      backup: payload
     });
     if (response?.ok === false) {
       throw new Error(response.error || 'Không thể khôi phục backup.');
     }
-    result.style.color = 'var(--apple-green)';
-    result.textContent = lf('Restored {counts}.', 'Đã khôi phục {counts}.', { counts: formatBackupCounts(response?.counts) });
-    $('backupImportPassword').value = '';
-    $('backupFile').value = '';
-    $('backupFileName').textContent = 'Chưa chọn tệp';
-    backupImportPayload = null;
+    if (generation === backupReadGeneration) {
+      result.style.color = 'var(--apple-green)';
+      result.textContent = lf('Restored {counts}.', 'Đã khôi phục {counts}.', { counts: formatBackupCounts(response?.counts) });
+      $('backupImportPassword').value = '';
+      $('backupFile').value = '';
+      $('backupFileName').textContent = 'Chưa chọn tệp';
+      backupImportPayload = null;
+    }
     await loadManager();
     await refreshSyncStatus(response?.syncStatus);
   } catch (error) {
-    result.style.color = '#e11d48';
-    result.textContent = `Không thể khôi phục: ${error?.message || 'Lỗi không xác định.'}`;
+    if (generation === backupReadGeneration) {
+      result.style.color = '#e11d48';
+      result.textContent = `Không thể khôi phục: ${error?.message || 'Lỗi không xác định.'}`;
+    }
   } finally {
+    backupImportPending = false;
+    $('backupFile').disabled = false;
+    $('backupImportPassword').disabled = false;
     button.textContent = 'Khôi phục Vault';
     button.disabled = !backupImportPayload;
   }

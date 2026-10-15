@@ -120,6 +120,134 @@ export function parseOtpAuthUri(value) {
   };
 }
 
+function encodeBase32(bytes) {
+  let result = '';
+  let buffer = 0;
+  let bits = 0;
+  for (const byte of bytes) {
+    buffer = (buffer << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      result += BASE32[(buffer >>> bits) & 31];
+    }
+    buffer &= (1 << bits) - 1;
+  }
+  if (bits) result += BASE32[(buffer << (5 - bits)) & 31];
+  return result;
+}
+
+function readMigrationFields(bytes) {
+  let offset = 0;
+  function readVarint() {
+    let value = 0n;
+    for (let index = 0; index < 10; index += 1) {
+      if (offset >= bytes.length) throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+      const byte = bytes[offset++];
+      if (index === 9 && byte > 1) throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+      value |= BigInt(byte & 127) << BigInt(index * 7);
+      if (!(byte & 128)) return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value;
+    }
+    throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+  }
+  const fields = new Map();
+  while (offset < bytes.length) {
+    const tag = readVarint();
+    if (typeof tag !== 'number') throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+    const field = Math.floor(tag / 8);
+    const wire = tag % 8;
+    if (!field || field > 0x1fffffff) throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+    let value;
+    if (wire === 0) {
+      value = readVarint();
+    } else if (wire === 2) {
+      const length = readVarint();
+      if (typeof length !== 'number' || length > bytes.length - offset) throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+      value = bytes.subarray(offset, offset + length);
+      offset += length;
+    } else if (wire === 1 || wire === 5) {
+      offset += wire === 1 ? 8 : 4;
+      if (offset > bytes.length) throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+      continue;
+    } else {
+      throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+    }
+    if (!fields.has(field)) fields.set(field, []);
+    fields.get(field).push(value);
+  }
+  return fields;
+}
+
+export function parseOtpQrUri(value) {
+  const raw = String(value).trim();
+  if (!raw.toLowerCase().startsWith('otpauth-migration:')) return [parseOtpAuthUri(raw)];
+  if (raw.length > MAX_OTP_URI_CHARS) throw new Error('URI OTP không hợp lệ.');
+  const url = new URL(raw);
+  if (url.hostname.toLowerCase() !== 'offline') throw new Error('URI OTP không hợp lệ.');
+  const data = (url.searchParams.get('data') || '').replace(/ /g, '+');
+  if (!data || !/^[A-Za-z0-9+/_-]+={0,2}$/.test(data)) {
+    throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+  }
+  let bytes;
+  try {
+    bytes = Uint8Array.from(atob(data.replace(/-/g, '+').replace(/_/g, '/')), character => character.charCodeAt(0));
+  } catch {
+    throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+  }
+  const fields = readMigrationFields(bytes);
+  const entries = fields.get(1) || [];
+  if (!entries.length || entries.length > 100) throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+  const versions = fields.get(2);
+  if (versions && (versions.length !== 1 || ![1, 2].includes(versions[0]))) {
+    throw new Error('Phiên bản QR Google Authenticator không được hỗ trợ.');
+  }
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  return entries.map(entry => {
+    if (!(entry instanceof Uint8Array)) throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+    const parameters = readMigrationFields(entry);
+    function getBytes(field) {
+      const values = parameters.get(field);
+      if (!values) return new Uint8Array();
+      if (values.length !== 1 || !(values[0] instanceof Uint8Array)) {
+        throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+      }
+      return values[0];
+    }
+    function getNumber(field) {
+      const values = parameters.get(field);
+      if (!values) return 0;
+      if (values.length !== 1 || typeof values[0] !== 'number') {
+        throw new Error('Dữ liệu QR Google Authenticator không hợp lệ.');
+      }
+      return values[0];
+    }
+    if (getNumber(6) !== 2) throw new Error('Chỉ hỗ trợ URI TOTP.');
+    const algorithm = { 1: 'SHA1', 2: 'SHA256', 3: 'SHA512' }[getNumber(4)];
+    if (!algorithm) throw new Error('Thuật toán OTP không được hỗ trợ.');
+    const digits = { 1: 6, 2: 8 }[getNumber(5)];
+    if (!digits) throw new Error('OTP phải có từ 6 đến 8 chữ số.');
+    let name;
+    let issuer;
+    try {
+      name = decoder.decode(getBytes(2)).trim();
+      issuer = decoder.decode(getBytes(3)).trim();
+    } catch {
+      throw new Error('Nhãn tài khoản OTP không hợp lệ.');
+    }
+    const separator = name.indexOf(':');
+    const account = (separator >= 0 ? name.slice(separator + 1) : name).trim();
+    issuer ||= separator >= 0 ? name.slice(0, separator).trim() : account;
+    return parseOtpAuthUri(serializeOtpAuthUri({
+      issuer,
+      account,
+      secret: encodeBase32(getBytes(1)),
+      algorithm,
+      digits,
+      period: 30
+    }));
+  });
+}
+
 export function serializeOtpAuthUri(item) {
   const issuer = String(item.issuer || '').trim();
   const account = String(item.account || '').trim();

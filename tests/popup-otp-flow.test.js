@@ -41,7 +41,7 @@ test('screen scanning injects a fresh selector and lets the user choose one QR r
   assert.match(background, /OPEN_OTP_TAB_SESSION_KEY/);
   assert.match(background, /LAST_QR_SAVED_SESSION_KEY/);
   assert.match(background, /PENDING_QR_SYNC_SESSION_KEY/);
-  assert.match(background, /rememberPendingQrSync\(savedItem\.id\)/);
+  assert.match(background, /for \(const item of addedItems\) await rememberPendingQrSync\(item\.id\)/);
   assert.match(background, /async function promotePendingQrSync\(user, password\)/);
   assert.match(background, /upsertIds\.map\(id => \(\{ kind: 'otp-upsert', id \}\)\)/);
   assert.match(background, /clearQrSyncCoveredBy\(operations\)/);

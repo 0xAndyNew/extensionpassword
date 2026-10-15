@@ -3,7 +3,7 @@
 
   const CLEANUP_KEY = '__aegisQrSelectorCleanup';
   const ORIGIN = location.origin;
-  if (!['http:', 'https:'].includes(location.protocol)) return;
+  if (!['http:', 'https:', 'file:'].includes(location.protocol)) return;
 
   try {
     globalThis[CLEANUP_KEY]?.();
@@ -39,8 +39,8 @@
   };
   let language = 'en';
   try {
-    const stored = await chrome.storage.local.get(['aegisLanguage']);
-    language = stored.aegisLanguage === 'vi' ? 'vi' : 'en';
+    const response = await chrome.runtime.sendMessage({ type: 'GET_UI_LANGUAGE' });
+    language = response?.ok && response.language === 'vi' ? 'vi' : 'en';
   } catch {
     language = 'en';
   }
@@ -372,7 +372,9 @@
         return;
       }
       hint.classList.add('success');
-      hint.textContent = saved.duplicate ? text.duplicate : text.saved;
+      hint.textContent = saved.importedCount > 1
+        ? (language === 'vi' ? `Đã nhập ${saved.importedCount} tài khoản OTP` : `Imported ${saved.importedCount} OTP accounts`)
+        : saved.duplicate ? text.duplicate : text.saved;
       selection.style.display = 'none';
       layer.classList.remove('selecting');
       layer.style.cursor = 'default';

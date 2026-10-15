@@ -1,0 +1,65 @@
+/* OTP cards and editor mirror the popup authenticator. */
+.otp-dashboard-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+.otp-dashboard-header h3 { margin:0; font-size:16px; font-weight:700; }
+.otp-toolbar { display:flex; flex-wrap:wrap; gap:7px; }
+.otp-toolbar button { padding:8px 12px; border:1px solid #d5d8dd; border-radius:8px; background:#fff; color:#1d1d1f; font:600 12px var(--font-family); cursor:pointer; }
+.otp-toolbar button.primary { background:var(--apple-accent); color:#fff; border-color:var(--apple-accent); }
+#otpList { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr)); align-content:start; gap:12px; }
+#otpSection .otp-empty { padding:28px; color:var(--apple-muted); font-size:13px; text-align:center; }
+#otpSection .otp-load-error { padding:18px; border:1px solid #ffd0cd; border-radius:10px; background:#fff7f6; color:#b42318; font-size:13px; text-align:center; }
+#otpSection .otp-load-error button { padding:7px 14px; border:1px solid #b7d8ff; border-radius:7px; background:#fff; color:#0068d0; cursor:pointer; font:600 12px var(--font-family); }
+#otpSection .otp-card { position:relative; box-sizing:border-box; min-width:0; min-height:108px; padding:12px 86px 11px 14px; border:1px solid #c8c8c8; background:#fff; cursor:pointer; transition:border-color .15s,box-shadow .15s; font-family:Arial,"Segoe UI",sans-serif; -webkit-user-drag:element; }
+#otpSection .otp-card:hover,#otpSection .otp-card.dragging { border-color:#008bd2; box-shadow:0 0 0 1px rgba(0,139,210,.12); }
+#otpSection .otp-issuer { color:#080808; font-size:12px; line-height:16px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#otpSection .otp-code { margin:2px 0 1px; color:#008bd2; font:400 clamp(26px,3vw,39px)/43px "Segoe UI",Arial,sans-serif; letter-spacing:.055em; font-variant-numeric:tabular-nums; transition:color .2s; }
+#otpSection .otp-code.expiring { color:#ef453d; }
+#otpSection .otp-code.invalid { margin:10px 0 8px; color:#d92d20; font:650 12px/17px var(--font-family); letter-spacing:0; }
+#otpSection .otp-account { color:#090909; font-size:11px; line-height:15px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#otpSection .otp-side { position:absolute; right:9px; top:7px; bottom:7px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; color:#8b8b90; }
+#otpSection .otp-card-tools { display:flex; align-items:center; gap:1px; }
+#otpSection .otp-icon-btn { width:23px; height:23px; display:grid; place-items:center; padding:0; border:0; border-radius:5px; background:transparent; color:#90949a; cursor:pointer; font-size:16px; line-height:1; }
+#otpSection .otp-icon-btn:hover { background:#eaf5ff; color:#0071e3; }
+#otpSection .otp-icon-btn:disabled { cursor:not-allowed; opacity:.35; }
+#otpSection .otp-drag-btn { cursor:grab; color:#9aa0a6; font-size:17px; letter-spacing:-2px; user-select:none; touch-action:none; -webkit-user-drag:element; }
+#otpSection .otp-drag-btn:active { cursor:grabbing; }
+#otpSection .otp-card.dragging { opacity:.62; border:1px dashed #0071e3; box-shadow:0 5px 18px rgba(0,113,227,.18); }
+#otpSection .otp-qr-btn { font-size:19px; }
+#otpSection .otp-timer { --timer-color:#008bd2; position:relative; width:27px; height:27px; flex:0 0 27px; display:grid; place-items:center; border-radius:50%; background:conic-gradient(from -90deg,var(--timer-color) 0deg var(--timer-angle),#d9e5ec var(--timer-angle) 360deg); color:#087db5; font:700 9px/1 Arial,sans-serif; }
+#otpSection .otp-timer::before { content:""; position:absolute; inset:4px; border-radius:50%; background:#fff; }
+#otpSection .otp-timer span { position:relative; z-index:1; }
+#otpSection .otp-timer.expiring { --timer-color:#ef453d; color:#d9362f; }
+.otp-modal { position:fixed; inset:0; z-index:1100; box-sizing:border-box; background:rgba(18,25,39,.28); display:grid; place-items:center; padding:18px; color-scheme:light; }
+.otp-modal.hidden { display:none !important; }
+.otp-dialog { width:100%; max-width:440px; max-height:calc(100vh - 36px); overflow-y:auto; box-sizing:border-box; background:#fff; color:#1d1d1f; border-radius:14px; padding:20px; border:1px solid rgba(0,0,0,.08); box-shadow:0 18px 55px rgba(0,0,0,.18); font-family:var(--font-family); }
+.otp-dialog h3 { margin:0 0 13px; color:#1d1d1f; font-size:16px; font-weight:700; }
+.otp-dialog input:not([type="hidden"]):not([type="file"]) { appearance:none; box-sizing:border-box; width:100%; height:40px; margin:0 0 9px; padding:0 11px; border:1px solid #d2d5da; border-radius:8px; outline:0; background:#fff!important; color:#1d1d1f!important; -webkit-text-fill-color:#1d1d1f; caret-color:#0071e3; font:400 12.5px/40px var(--font-family); box-shadow:none; }
+.otp-dialog input::placeholder { color:#92959a; -webkit-text-fill-color:#92959a; opacity:1; }
+.otp-dialog input:focus,.otp-dialog select:focus { border-color:#0071e3; box-shadow:0 0 0 3px rgba(0,113,227,.1); }
+.otp-dialog select { box-sizing:border-box; width:100%; height:38px; padding:0 8px; border:1px solid #d2d5da; border-radius:8px; background:#fff; color:#1d1d1f; font:500 12px/38px var(--font-family); }
+.otp-dialog-actions,.otp-delete-confirm-actions { display:flex; gap:7px; margin-top:7px; }
+.otp-dialog button { flex:1; min-height:36px; border:1px solid #d5d8dd; border-radius:8px; padding:8px; background:#f5f5f7; color:#2c2c2e; cursor:pointer; font:650 12px/1.2 var(--font-family); }
+.otp-dialog button:hover { background:#ececf0; }
+.otp-dialog button:disabled,.otp-toolbar button:disabled { cursor:wait; opacity:.58; }
+.otp-dialog .primary { border-color:#0071e3; background:#0071e3; color:#fff; }
+.otp-dialog .primary:hover { background:#0077ed; }
+.otp-form-field { display:block; }
+.otp-form-field > span { display:block; margin:0 0 5px; color:#67676c; font-size:11px; font-weight:650; }
+.otp-field-hint { margin:-3px 0 9px; color:#86868b; font-size:11px; line-height:1.35; }
+.otp-form-status { min-height:15px; margin:0 0 4px; color:#087db5; font-size:11px; font-weight:600; line-height:1.35; text-align:center; }
+.otp-dialog .error { color:#b42318; font-size:12px; text-align:center; overflow-wrap:anywhere; }
+.otp-options-grid { display:grid; grid-template-columns:1.2fr .8fr 1fr; gap:7px; margin-bottom:9px; }
+.otp-dialog .otp-delete-btn { display:none; width:100%; margin:3px 0 8px; border-color:#ffd0cd; background:#fff4f3; color:#d92d20; }
+.otp-dialog .otp-delete-btn.visible { display:block; }
+.otp-delete-confirm { margin:3px 0 8px; padding:10px; border:1px solid #ffd0cd; border-radius:9px; background:#fff7f6; }
+.otp-delete-confirm p { margin:0 0 9px; color:#85221c; font-size:12px; font-weight:650; text-align:center; }
+.otp-dialog .otp-delete-confirm-btn { border-color:#d92d20; background:#d92d20; color:#fff; }
+.otp-dialog .otp-delete-confirm-btn:hover { background:#c5221a; }
+.otp-qr-dialog { max-width:340px; text-align:center; }
+.otp-qr-label { margin:0 0 12px; color:#67676c; font-size:12px; overflow-wrap:anywhere; }
+.otp-qr-canvas { display:block; box-sizing:content-box; max-width:100%; width:230px; height:auto; margin:0 auto 12px; box-shadow:0 0 0 1px #dedede; image-rendering:pixelated; }
+.otp-qr-warning { margin:0 0 12px; color:#b42318; font-size:11px; line-height:1.4; }
+.otp-copy-toast { position:fixed; left:50%; top:18px; z-index:1200; max-width:calc(100% - 36px); box-sizing:border-box; transform:translate(-50%,-8px); padding:10px 16px; border-radius:9px; background:rgba(32,32,34,.94); color:#fff; font:650 12px Arial,"Segoe UI",sans-serif; text-align:center; white-space:normal; overflow-wrap:anywhere; line-height:1.35; box-shadow:0 10px 28px rgba(0,0,0,.22); opacity:0; pointer-events:none; transition:.18s; }
+.otp-copy-toast.show { opacity:1; transform:translate(-50%,0); }
+.otp-copy-toast[data-tone="success"] { background:rgba(24,126,74,.94); }
+.otp-copy-toast[data-tone="error"] { background:rgba(180,35,24,.95); }
+@media (max-width:600px) { #otpList { grid-template-columns:1fr; } .otp-options-grid { grid-template-columns:1fr; } }
